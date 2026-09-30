@@ -10,6 +10,7 @@ Sydacalist is a single-page, browser-only app (no backend server) that lets you:
 
 - Generate or import a **Nostr keypair** as your identity — no email, no password, no central account database.
 - Post, like, repost, and comment on a **decentralized social feed** carried over public Nostr relays.
+- **Follow people** by npub/hex, view a locally cached name for them, and switch the feed between **Global** and **Following-only** modes.
 - Customize a **MySpace-style personal profile page** — theme colors, banner/avatar placeholders, and freeform widgets — and optionally publish it publicly.
 - Keep **private notes** encrypted at rest, as a placeholder for future end-to-end encrypted messaging.
 - Try a **peer-to-peer WebRTC demo** (data-channel chat + optional camera preview) using manual copy/paste signaling, with no signaling server required.
@@ -47,8 +48,8 @@ src/
     relays.js     Nostr relay connections, publishing, and feed subscriptions
     webrtc.js     Manual-signaling WebRTC peer connection helper
   state.js        Central in-memory app state + actions (no UI code)
-  ui/             One render function per tab (Identity, Feed, Profile, Private
-                  Notes, Live P2P, Settings), plus the app shell in ui/app.js
+  ui/             One render function per tab (Identity, Feed, People, Profile,
+                  Private Notes, Live P2P, Settings), plus the app shell in ui/app.js
   utils/          Tiny DOM-building and formatting helpers (no framework)
 test/             Unit tests for the pure-logic modules (crypto, identity,
                   storage, vault, WebRTC signaling)
@@ -82,7 +83,7 @@ A "Panic wipe" button (Settings tab) permanently deletes all local app data from
 
 ## Local-first storage
 
-All app state — identity vault, profile, relay list, drafts, preferences, and cached feed — lives in **IndexedDB** in your browser (see `src/lib/storage.js`). The app reads this on startup and works fully offline once loaded (aside from live relay/P2P connectivity, which naturally needs a network). There is no central backend database; the browser *is* the database.
+All app state — identity vault, profile, relay list, drafts, preferences, follow list, cached profile names, and cached feed — lives in **IndexedDB** in your browser (see `src/lib/storage.js`). The app reads this on startup and works fully offline once loaded (aside from live relay/P2P connectivity, which naturally needs a network). There is no central backend database; the browser *is* the database.
 
 ## Nostr-powered social features
 
@@ -90,6 +91,8 @@ All app state — identity vault, profile, relay list, drafts, preferences, and 
 - Publish signed text notes (kind 1), likes/reactions (kind 7), reposts (kind 6), comments (kind 1 replies), and a follow list (kind 3) — see `src/lib/relays.js`.
 - Subscribe to a basic feed of recent notes/reactions/reposts from your configured relays.
 - Relay disconnects are handled gracefully: the UI shows per-relay status and the app keeps working with whatever relays remain reachable.
+- **Follows & discovery (People tab):** look someone up by npub or hex pubkey to fetch their published profile metadata (kind 0) and follow them; your follow list is stored locally and, once your identity is unlocked, republished as a Nostr contact list (kind 3) whenever it changes, so it's portable to other Nostr clients too. You can also follow/unfollow directly from an author's name in the Feed tab.
+- **Feed modes:** toggle the Feed tab between 🌐 Global (everyone on your configured relays) and 👥 Following (only people you follow) — this is the `feedMode` preference, persisted locally.
 
 ## Customizable profile
 
@@ -120,7 +123,7 @@ This is intentionally a first pass. Notable gaps, by design:
 - **No decentralized signaling** — WebRTC signaling is manual copy/paste for now; automating it (e.g. over Nostr DMs) is a natural next step.
 - **No E2EE DMs yet** — Private Notes are encrypted at rest but not yet sent to anyone; real DMs need a NIP-17/NIP-44-style transport.
 - **No media/IPFS storage** — image/video attachments and distributed media storage (IPFS/Hypercore) are out of scope for this iteration.
-- **Simple feed ranking** — the feed is reverse-chronological across your configured relays; there's no client-side ranking, muting, or spam filtering yet.
+- **Simple feed ranking** — within Global or Following mode, the feed is reverse-chronological; there's no client-side interest ranking, muting, or spam filtering yet.
 - **No mobile app** — this is a browser-only prototype.
 - **No moderation tooling** — beyond what relays themselves provide.
 

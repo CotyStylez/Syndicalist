@@ -3,6 +3,7 @@ import { shorten } from '../utils/format.js';
 import { renderIdentityView } from './identityView.js';
 import { renderFeedView } from './feedView.js';
 import { renderProfileView } from './profileView.js';
+import { renderPeopleView } from './peopleView.js';
 import { renderNotesView } from './notesView.js';
 import { renderWebrtcView } from './webrtcView.js';
 import { renderSettingsView } from './settingsView.js';
@@ -10,6 +11,7 @@ import { renderSettingsView } from './settingsView.js';
 const TABS = [
   { id: 'identity', label: '🔑 Identity' },
   { id: 'feed', label: '🗞️ Feed' },
+  { id: 'people', label: '👥 People' },
   { id: 'profile', label: '🎨 Profile' },
   { id: 'notes', label: '🔒 Private Notes' },
   { id: 'webrtc', label: '📡 Live P2P' },
@@ -18,6 +20,13 @@ const TABS = [
 
 export function mountApp(root, app) {
   let activeTab = 'identity';
+
+  // Allows other views (e.g. clicking an author in the Feed) to jump the
+  // user straight to the People tab.
+  app.goToPeopleTab = () => {
+    activeTab = 'people';
+    renderShell();
+  };
 
   function renderShell() {
     const { state } = app;
@@ -72,6 +81,9 @@ export function mountApp(root, app) {
         break;
       case 'feed':
         renderFeedView(content, app);
+        break;
+      case 'people':
+        renderPeopleView(content, app);
         break;
       case 'profile':
         renderProfileView(content, app);

@@ -99,5 +99,7 @@ export const KEYS = {
   PREFS: 'prefs', // UI preferences (feed mode, theme, etc.)
   DRAFTS: 'drafts', // unsent draft posts
   FEED_CACHE: 'feed-cache', // last-seen feed events, for offline viewing
+  FOLLOWS: 'follows', // pubkeys (hex) the user follows, mirrors the kind-3 list
+  PROFILE_CACHE: 'profile-cache', // cached kind-0 metadata for other pubkeys, keyed by hex
   PRIVATE_NOTES: 'private-notes-vault', // encrypted private notes / DM placeholders
 };

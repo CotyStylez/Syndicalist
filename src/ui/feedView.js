@@ -33,6 +33,26 @@ function drawFeed(content, app) {
     }),
   );
 
+  const feedModeRow = h('div', { class: 'button-row' }, [
+    h('span', { class: 'muted small' }, 'Feed:'),
+    h(
+      'button',
+      {
+        class: `tab-btn${state.prefs.feedMode === 'global' ? ' active' : ''}`,
+        onClick: () => app.setFeedMode('global'),
+      },
+      '🌐 Global',
+    ),
+    h(
+      'button',
+      {
+        class: `tab-btn${state.prefs.feedMode === 'following' ? ' active' : ''}`,
+        onClick: () => app.setFeedMode('following'),
+      },
+      `👥 Following (${state.follows.length})`,
+    ),
+  ]);
+
   const composer = h('section', { class: 'card' }, [
     h('h3', {}, 'Share something'),
     !state.identity ? h('p', { class: 'muted' }, 'Unlock your identity in the 🔑 Identity tab to post.') : null,
@@ -61,15 +81,24 @@ function drawFeed(content, app) {
     ),
   ]);
 
+  const visibleFeed = state.feed.filter((e) => e.kind === 1);
   const feedList = h(
     'section',
     { class: 'feed-list' },
-    state.feed.length === 0
-      ? [h('p', { class: 'muted' }, 'No posts yet. Connect to relays and wait for the feed to populate.')]
-      : state.feed.filter((e) => e.kind === 1).map((event) => renderFeedItem(event, app)),
+    visibleFeed.length === 0
+      ? [
+          h(
+            'p',
+            { class: 'muted' },
+            state.prefs.feedMode === 'following' && state.follows.length === 0
+              ? 'Follow people in the 👥 People tab to build your feed, or switch to 🌐 Global.'
+              : 'No posts yet. Connect to relays and wait for the feed to populate.',
+          ),
+        ]
+      : visibleFeed.map((event) => renderFeedItem(event, app)),
   );
 
-  mount(content, statusRow, composer, feedList);
+  mount(content, statusRow, feedModeRow, composer, feedList);
 }
 
 function statusIcon(status) {
@@ -82,9 +111,13 @@ function renderFeedItem(event, app) {
   const { state } = app;
   let showComment = false;
   const container = h('article', { class: 'feed-item' });
+  void app.ensureProfileCached(event.pubkey);
 
   function draw() {
     const npub = npubFor(event.pubkey);
+    const displayName = state.profileCache[event.pubkey]?.name;
+    const isFollowing = state.follows.includes(event.pubkey);
+    const isSelf = state.identity?.publicKeyHex === event.pubkey;
     const commentBox = showComment
       ? h('div', { class: 'inline-comment' }, [
           h('textarea', { rows: 2, id: `comment-${event.id}`, placeholder: 'Write a reply…' }),
@@ -109,8 +142,34 @@ function renderFeedItem(event, app) {
       container,
       h('div', { class: 'feed-item-header' }, [
         h('span', { class: 'avatar' }, '👤'),
-        h('span', { class: 'author', title: npub }, shorten(npub)),
+        h(
+          'button',
+          {
+            class: 'link-btn author',
+            title: npub,
+            onClick: () => app.goToPeopleTab?.(),
+          },
+          displayName ? displayName : shorten(npub),
+        ),
         h('span', { class: 'timestamp' }, relativeTime(event.created_at)),
+        !isSelf
+          ? h(
+              'button',
+              {
+                class: 'link-btn',
+                disabled: !state.identity,
+                onClick: async () => {
+                  try {
+                    if (isFollowing) await app.unfollowPubkey(event.pubkey);
+                    else await app.followPubkey(event.pubkey);
+                  } catch (err) {
+                    app.setError(err.message);
+                  }
+                },
+              },
+              isFollowing ? '✓ Following' : '+ Follow',
+            )
+          : null,
       ]),
       h('div', { class: 'feed-item-body', html: escapeHtml(event.content).replaceAll('\n', '<br>') }),
       h('div', { class: 'feed-item-actions' }, [

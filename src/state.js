@@ -10,7 +10,7 @@
 import { generateIdentity, importIdentity } from './lib/identity.js';
 import { sealAndStore, unseal, hasSealed, forget } from './lib/vault.js';
 import { getItem, setItem, clearAll, KEYS } from './lib/storage.js';
-import { RelayHub, DEFAULT_RELAYS } from './lib/relays.js';
+import { RelayHub, DEFAULT_RELAYS, pubkeyFromInput } from './lib/relays.js';
 
 const DEFAULT_PROFILE = {
   displayName: '',
@@ -54,7 +54,8 @@ export function createAppState() {
     prefs: { ...DEFAULT_PREFS },
     draft: '',
     feed: [], // deduped nostr events, newest first
-    follows: [],
+    follows: [], // pubkeys (hex) the user follows
+    profileCache: {}, // pubkeyHex -> { name, about, picture, ..., fetchedAt }
     relayStatus: {},
     privateNotes: [], // decrypted only in memory while unlocked
     relayHub: null,
@@ -85,20 +86,28 @@ export function createAppState() {
   }
 
   async function loadPersisted() {
-    const [profile, relays, prefs, draft, vaultExists] = await Promise.all([
+    const [profile, relays, prefs, draft, vaultExists, follows, profileCache] = await Promise.all([
       getItem(KEYS.PROFILE),
       getItem(KEYS.RELAYS),
       getItem(KEYS.PREFS),
       getItem(KEYS.DRAFTS),
       hasSealed(KEYS.IDENTITY_VAULT),
+      getItem(KEYS.FOLLOWS),
+      getItem(KEYS.PROFILE_CACHE),
     ]);
     if (profile) state.profile = { ...DEFAULT_PROFILE, ...profile };
     if (relays && relays.length) state.relays = relays;
     if (prefs) state.prefs = { ...DEFAULT_PREFS, ...prefs };
     if (typeof draft === 'string') state.draft = draft;
+    if (Array.isArray(follows)) state.follows = follows;
+    if (profileCache) state.profileCache = profileCache;
     state.vaultExists = vaultExists;
     state.ready = true;
     notify();
+  }
+
+  function computeFeedAuthors() {
+    return state.prefs.feedMode === 'following' ? [...state.follows] : undefined;
   }
 
   function connectRelays({ onEvent } = {}) {
@@ -113,19 +122,101 @@ export function createAppState() {
     state.relayHub = hub;
     hub.ensureConnections();
     hub.subscribeFeed({
+      authors: computeFeedAuthors(),
       onEvent: (event) => {
         addFeedEvent(event);
         onEvent?.(event);
+        void ensureProfileCached(event.pubkey);
       },
     });
     notify();
     return hub;
   }
 
+  /** Re-subscribes to the feed with the current filter, without dropping
+   * the underlying relay websocket connections (used when the follow list
+   * or feed mode changes). */
+  function refreshFeedSubscription() {
+    if (!state.relayHub) return;
+    state.feed = [];
+    state.relayHub.subscribeFeed({
+      authors: computeFeedAuthors(),
+      onEvent: (event) => {
+        addFeedEvent(event);
+        void ensureProfileCached(event.pubkey);
+      },
+    });
+    notifyFeed();
+  }
+
+  async function setFeedMode(mode) {
+    await savePrefs({ feedMode: mode });
+    refreshFeedSubscription();
+  }
+
   function addFeedEvent(event) {
     if (state.feed.some((existing) => existing.id === event.id)) return;
     state.feed = [event, ...state.feed].sort((a, b) => b.created_at - a.created_at).slice(0, 300);
     notifyFeed();
+  }
+
+  /** Follows a pubkey (hex or npub/nsec-style input), persists it locally,
+   * and best-effort publishes the updated follow list if unlocked. */
+  async function followPubkey(input) {
+    const pubkeyHex = pubkeyFromInput(input);
+    if (state.identity && pubkeyHex === state.identity.publicKeyHex) {
+      throw new Error("You can't follow yourself.");
+    }
+    if (!state.follows.includes(pubkeyHex)) {
+      state.follows = [...state.follows, pubkeyHex];
+      await setItem(KEYS.FOLLOWS, state.follows);
+      if (state.prefs.feedMode === 'following') refreshFeedSubscription();
+      notify();
+      await publishFollowsIfUnlocked();
+    }
+    await ensureProfileCached(pubkeyHex, { force: true });
+    return pubkeyHex;
+  }
+
+  async function unfollowPubkey(pubkeyHex) {
+    if (!state.follows.includes(pubkeyHex)) return;
+    state.follows = state.follows.filter((pk) => pk !== pubkeyHex);
+    await setItem(KEYS.FOLLOWS, state.follows);
+    if (state.prefs.feedMode === 'following') refreshFeedSubscription();
+    notify();
+    await publishFollowsIfUnlocked();
+  }
+
+  async function publishFollowsIfUnlocked() {
+    if (!state.identity || !state.relayHub) return;
+    try {
+      await state.relayHub.publishFollowList({
+        pubkeys: state.follows,
+        secretKeyHex: state.identity.secretKeyHex,
+      });
+    } catch {
+      // Best-effort: the follow list stays accurate locally even if no
+      // relay accepted the publish right now.
+    }
+  }
+
+  /** Looks up and caches a pubkey's published profile metadata (kind 0).
+   * Skips the network round-trip if we already have a cached copy, unless
+   * `force` is set (e.g. right after the user follows someone new). */
+  async function ensureProfileCached(pubkeyHex, { force = false } = {}) {
+    if (!pubkeyHex || !state.relayHub) return state.profileCache[pubkeyHex] || null;
+    if (!force && state.profileCache[pubkeyHex]) return state.profileCache[pubkeyHex];
+    try {
+      const metadata = await state.relayHub.fetchProfileMetadata(pubkeyHex);
+      if (metadata) {
+        state.profileCache = { ...state.profileCache, [pubkeyHex]: { ...metadata, fetchedAt: Date.now() } };
+        await setItem(KEYS.PROFILE_CACHE, state.profileCache);
+        notifyFeed();
+      }
+      return metadata;
+    } catch {
+      return state.profileCache[pubkeyHex] || null;
+    }
   }
 
   async function generateNewIdentity(passphrase) {
@@ -214,6 +305,8 @@ export function createAppState() {
     state.prefs = { ...DEFAULT_PREFS };
     state.draft = '';
     state.feed = [];
+    state.follows = [];
+    state.profileCache = {};
     state.privateNotes = [];
     notify();
   }
@@ -244,6 +337,10 @@ export function createAppState() {
     saveDraft,
     setRelays,
     savePrefs,
+    setFeedMode,
+    followPubkey,
+    unfollowPubkey,
+    ensureProfileCached,
     addPrivateNote,
     deletePrivateNote,
     panicWipe,

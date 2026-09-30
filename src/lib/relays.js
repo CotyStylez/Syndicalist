@@ -142,6 +142,31 @@ export class RelayHub {
     });
   }
 
+  /**
+   * One-shot lookup of a pubkey's most recent published profile metadata
+   * (kind 0). Returns the parsed JSON content, or `null` if nothing is
+   * found on the currently connected relays.
+   */
+  async fetchProfileMetadata(pubkeyHex) {
+    const event = await this.pool.get(this.relayUrls, { kinds: [METADATA_KIND], authors: [pubkeyHex] });
+    if (!event) return null;
+    try {
+      return { ...JSON.parse(event.content), _event: event };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * One-shot lookup of a pubkey's most recent published follow list
+   * (kind 3). Returns an array of followed pubkeys (possibly empty).
+   */
+  async fetchFollowList(pubkeyHex) {
+    const event = await this.pool.get(this.relayUrls, { kinds: [CONTACTS_KIND], authors: [pubkeyHex] });
+    if (!event) return [];
+    return event.tags.filter((tag) => tag[0] === 'p').map((tag) => tag[1]);
+  }
+
   async _signAndPublish({ kind, content, tags, secretKeyHex }) {
     const secretKey = secretKeyFromHex(secretKeyHex);
     const event = finalizeEvent(
@@ -161,6 +186,22 @@ export class RelayHub {
 
 export function npubFor(pubkeyHex) {
   return nip19.npubEncode(pubkeyHex);
+}
+
+/**
+ * Accepts either an npub1... string or a 64-char hex pubkey and returns the
+ * hex form, or throws if the input is not a recognizable public key.
+ */
+export function pubkeyFromInput(input) {
+  const trimmed = (input || '').trim();
+  if (!trimmed) throw new Error('Enter an npub or hex public key.');
+  if (trimmed.startsWith('npub1')) {
+    const decoded = nip19.decode(trimmed);
+    if (decoded.type !== 'npub') throw new Error('That does not look like an npub public key.');
+    return decoded.data;
+  }
+  if (/^[0-9a-fA-F]{64}$/.test(trimmed)) return trimmed.toLowerCase();
+  throw new Error('Enter a valid npub1... key or a 64-character hex public key.');
 }
 
 export const DEFAULT_RELAYS = [

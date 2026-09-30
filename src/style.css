@@ -197,6 +197,29 @@ button.link-btn {
   justify-content: space-between;
 }
 
+.error-text {
+  color: #ffb3b8;
+  font-size: 0.85rem;
+}
+
+.follow-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.follow-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid #24243f;
+}
+
+.follow-row .author {
+  flex: 1;
+}
+
 .key-box {
   display: block;
   background: var(--bg);
@@ -242,6 +265,15 @@ button.link-btn {
   margin-bottom: 0.5rem;
   color: var(--muted);
   font-size: 0.85rem;
+}
+
+.feed-item-header .author {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.feed-item-header .timestamp {
+  margin-left: auto;
 }
 
 .feed-item-body {
