@@ -1,5 +1,5 @@
 import { h, mount } from '../utils/dom.js';
-import { PeerSession } from '../lib/webrtc.js';
+import { PeerSession, encodeSignalMessage } from '../lib/webrtc.js';
 
 // This view manages a live WebRTC peer connection. Its state (the peer
 // connection, local media stream, signaling text) is kept at module scope
@@ -15,8 +15,18 @@ let pastedAnswer = '';
 let chatLog = [];
 let chatDraft = '';
 let connectionState = 'new';
+let dmRecipientValue = '';
+let dmSendBusy = false;
+let dmSendStatus = null;
 
 export function renderWebrtcView(content, app) {
+  if (app.state.identity && !app.state.relayHub) app.connectRelays();
+  const pending = app.consumePendingWebrtcSignal?.();
+  if (pending) {
+    role = pending.kind === 'offer' ? 'responder' : 'initiator';
+    if (pending.kind === 'offer') pastedOffer = pending.blob;
+    else pastedAnswer = pending.blob;
+  }
   draw(content, app);
 }
 
@@ -56,7 +66,8 @@ function draw(content, app) {
       h('strong', {}, 'Initiator'),
       ' (creates an offer), the other is the ',
       h('strong', {}, 'Responder'),
-      ' (creates an answer). Copy/paste the text blobs between you (chat, email, anything) to complete the handshake.',
+      ' (creates an answer). Copy/paste the text blobs between you (chat, email, anything) to complete the handshake — ',
+      'or, if you know each other\'s npub, use the "Send via Messages" button to deliver it as an encrypted direct message instead.',
     ]),
     h('p', { class: 'muted small' }, `Connection state: ${connectionState}`),
   ]);
@@ -133,8 +144,15 @@ function draw(content, app) {
         'Create offer',
       ),
       offerText ? h('textarea', { rows: 4, readonly: '', value: offerText }) : null,
+      offerText ? renderSendViaDm(content, app, 'offer', offerText) : null,
+      dmSendStatus ? h('p', { class: 'muted small' }, dmSendStatus) : null,
       h('h3', {}, '2. Paste their answer'),
-      h('textarea', { rows: 4, placeholder: 'Paste the answer blob here', onInput: (e) => (pastedAnswer = e.target.value) }),
+      h('textarea', {
+        rows: 4,
+        placeholder: 'Paste the answer blob here',
+        value: pastedAnswer,
+        onInput: (e) => (pastedAnswer = e.target.value),
+      }),
       h(
         'button',
         {
@@ -153,7 +171,12 @@ function draw(content, app) {
   } else if (role === 'responder') {
     signalingSection = h('section', { class: 'card' }, [
       h('h3', {}, '1. Paste their offer'),
-      h('textarea', { rows: 4, placeholder: 'Paste the offer blob here', onInput: (e) => (pastedOffer = e.target.value) }),
+      h('textarea', {
+        rows: 4,
+        placeholder: 'Paste the offer blob here',
+        value: pastedOffer,
+        onInput: (e) => (pastedOffer = e.target.value),
+      }),
       h(
         'button',
         {
@@ -172,6 +195,8 @@ function draw(content, app) {
       ),
       h('h3', {}, '2. Send this answer back'),
       answerText ? h('textarea', { rows: 4, readonly: '', value: answerText }) : null,
+      answerText ? renderSendViaDm(content, app, 'answer', answerText) : null,
+      dmSendStatus ? h('p', { class: 'muted small' }, dmSendStatus) : null,
     ]);
   }
 
@@ -219,4 +244,45 @@ function resetSession() {
   pastedAnswer = '';
   chatLog = [];
   connectionState = 'new';
+  dmSendStatus = null;
+}
+
+/** A small "send this blob as an encrypted DM" row, shown under the offer
+ * or answer textarea, so two people don't have to copy/paste it by hand —
+ * it rides the same NIP-17 encrypted transport as the Messages tab. */
+function renderSendViaDm(content, app, kind, blob) {
+  return h('div', { class: 'button-row inline-comment' }, [
+    h('input', {
+      type: 'text',
+      placeholder: "Recipient's npub/hex (optional — or copy/paste instead)",
+      value: dmRecipientValue,
+      onInput: (e) => (dmRecipientValue = e.target.value),
+    }),
+    h(
+      'button',
+      {
+        disabled: dmSendBusy,
+        onClick: async () => {
+          dmSendStatus = null;
+          if (!dmRecipientValue.trim()) {
+            dmSendStatus = 'Enter a recipient npub/hex first.';
+            draw(content, app);
+            return;
+          }
+          dmSendBusy = true;
+          draw(content, app);
+          try {
+            await app.sendDirectMessage(dmRecipientValue, encodeSignalMessage(kind, blob));
+            dmSendStatus = `✅ Sent — they can open it from their 💬 Messages tab.`;
+          } catch (err) {
+            dmSendStatus = `Failed to send: ${err.message}`;
+          } finally {
+            dmSendBusy = false;
+            draw(content, app);
+          }
+        },
+      },
+      dmSendBusy ? 'Sending…' : `📨 Send this ${kind} via Messages`,
+    ),
+  ]);
 }

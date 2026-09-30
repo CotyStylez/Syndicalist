@@ -14,7 +14,7 @@ Sydacalist is a single-page, browser-only app (no backend server) that lets you:
 - Customize a **MySpace-style personal profile page** — theme colors, banner/avatar placeholders, and freeform widgets — and optionally publish it publicly.
 - Send **end-to-end encrypted direct messages** (NIP-17 gift-wrapped DMs) that hide both content and metadata from relays.
 - Keep **private notes** encrypted at rest as personal, single-user scratch space.
-- Try a **peer-to-peer WebRTC demo** (data-channel chat + optional camera preview) using manual copy/paste signaling, with no signaling server required.
+- Try a **peer-to-peer WebRTC demo** (data-channel chat + optional camera preview) with no signaling server required — exchange the connection setup via manual copy/paste, or deliver it as an encrypted direct message.
 
 ## How to run it
 
@@ -111,19 +111,19 @@ The Profile tab is the MySpace-inspired centerpiece: pick a theme color, accent/
 
 The "Live P2P" tab demonstrates a direct browser-to-browser connection:
 
-1. One person picks **Initiator**, clicks **Create offer**, and copies the resulting text blob to the other person (chat, email, anything).
-2. The other person picks **Responder**, pastes the offer, clicks **Create answer**, and sends the resulting blob back.
-3. The initiator pastes that answer and clicks **Apply answer** to complete the handshake.
+1. One person picks **Initiator**, clicks **Create offer**, and either copies the resulting text blob to the other person (chat, email, anything) or clicks **📨 Send this offer via Messages** to deliver it as an encrypted NIP-17 direct message if they know the other person's npub/hex.
+2. The other person picks **Responder** and pastes the offer (or, if it arrived via Messages, opens it from their 💬 Messages tab with one click, which jumps here with the offer pre-filled), then clicks **Create answer** and sends the resulting blob back the same way (copy/paste or via Messages).
+3. The initiator pastes (or receives via Messages) that answer and clicks **Apply answer** to complete the handshake.
 4. Once connected, both sides can chat over the WebRTC data channel. An optional "Enable camera & mic" button attaches local video/audio and previews the remote stream if the other peer also enables theirs.
 
-This uses only a public STUN server for NAT traversal and requires no custom signaling or media server. (Note: some networks — especially symmetric NATs or heavily firewalled corporate/CI networks — will prevent a direct connection from establishing; a future version could add a TURN relay option or decentralized signaling over Nostr DMs.)
+This uses only a public STUN server for NAT traversal and requires no custom signaling or media server. Signaling itself (the offer/answer exchange) can now ride the same encrypted, decentralized DM transport as the Messages tab instead of requiring manual copy/paste — though copy/paste remains available and is the most reliable fallback. (Note: some networks — especially symmetric NATs or heavily firewalled corporate/CI networks — will prevent a direct connection from establishing even once signaling succeeds; a future version could add a TURN relay option.)
 
 ## Known limitations & future work
 
 This is intentionally a first pass. Notable gaps, by design:
 
-- **No TURN relay** — WebRTC connections can fail on restrictive networks. A future version could offer an optional TURN server or fall back to relaying data over Nostr.
-- **No decentralized signaling** — WebRTC signaling is manual copy/paste for now; automating it (e.g. over Nostr DMs) is a natural next step.
+- **No TURN relay** — WebRTC connections can fail on restrictive networks even after successful signaling. A future version could offer an optional TURN server.
+- **Nostr-based signaling is one-shot, not automatic** — sending a WebRTC offer/answer via Messages still requires a manual button click on each side; there's no fully automated call-setup flow (e.g. incoming-call notifications) yet.
 - **DM delivery caveats** — NIP-17 gift-wrap (kind 1059) events are not yet universally supported/retained by all public relays, so delivery isn't guaranteed on every relay; there are no delivery or read receipts; DM history only syncs to a second device/browser if that device's relays still have the original gift-wrap events (relays may not retain them indefinitely); and this first pass supports 1:1 conversations only (no group DMs).
 - **No media/IPFS storage** — image/video attachments and distributed media storage (IPFS/Hypercore) are out of scope for this iteration.
 - **Simple feed ranking** — within Global or Following mode, the feed is reverse-chronological; there's no client-side interest ranking, muting, or spam filtering yet.

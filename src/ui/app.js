@@ -22,12 +22,29 @@ const TABS = [
 
 export function mountApp(root, app) {
   let activeTab = 'identity';
+  let pendingWebrtcSignal = null;
 
   // Allows other views (e.g. clicking an author in the Feed) to jump the
   // user straight to the People tab.
   app.goToPeopleTab = () => {
     activeTab = 'people';
     renderShell();
+  };
+
+  // Allows the Messages tab to jump the user to Live P2P with an incoming
+  // WebRTC offer/answer (received as an encrypted DM) pre-filled, so they
+  // don't have to copy/paste it by hand.
+  app.goToWebrtcTabWithSignal = (kind, blob) => {
+    pendingWebrtcSignal = { kind, blob };
+    activeTab = 'webrtc';
+    renderShell();
+  };
+
+  // Consumed once by webrtcView on render; returns null afterwards.
+  app.consumePendingWebrtcSignal = () => {
+    const pending = pendingWebrtcSignal;
+    pendingWebrtcSignal = null;
+    return pending;
   };
 
   function renderShell() {

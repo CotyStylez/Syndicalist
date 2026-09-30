@@ -8,6 +8,32 @@
 
 const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
 
+export const SIGNAL_MESSAGE_PREFIX = 'sydacalist-webrtc-signal:v1:';
+
+/** Wraps an already-encoded offer/answer blob (as produced by
+ * `createOffer`/`createAnswer` below) in a small JSON envelope so it can be
+ * recognized when sent as a direct message (see the Messages tab), instead
+ * of requiring manual copy/paste between two browsers. */
+export function encodeSignalMessage(kind, blob) {
+  return SIGNAL_MESSAGE_PREFIX + JSON.stringify({ kind, blob });
+}
+
+/** Recognizes and unwraps a signal envelope from DM content. Returns
+ * `{ kind: 'offer' | 'answer', blob }`, or `null` if `content` isn't one
+ * (e.g. an ordinary chat message). */
+export function decodeSignalMessage(content) {
+  if (typeof content !== 'string' || !content.startsWith(SIGNAL_MESSAGE_PREFIX)) return null;
+  try {
+    const parsed = JSON.parse(content.slice(SIGNAL_MESSAGE_PREFIX.length));
+    if ((parsed.kind === 'offer' || parsed.kind === 'answer') && typeof parsed.blob === 'string') {
+      return { kind: parsed.kind, blob: parsed.blob };
+    }
+  } catch {
+    // Not valid JSON, or not our envelope shape — treat as a normal message.
+  }
+  return null;
+}
+
 function waitForIceGatheringComplete(pc) {
   if (pc.iceGatheringState === 'complete') return Promise.resolve();
   return new Promise((resolve) => {

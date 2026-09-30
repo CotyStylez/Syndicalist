@@ -1,6 +1,7 @@
 import { h, mount } from '../utils/dom.js';
 import { shorten, relativeTime, escapeHtml } from '../utils/format.js';
 import { npubFor, pubkeyFromInput } from '../lib/relays.js';
+import { decodeSignalMessage } from '../lib/webrtc.js';
 
 // Encrypted DM UI state that needs to survive redraws but not module
 // reloads: which conversation is open, and in-progress composer text.
@@ -29,6 +30,12 @@ function displayNameFor(state, pubkeyHex) {
 function truncatePreview(text, maxLength = 40) {
   if (!text) return '';
   return text.length > maxLength ? `${text.slice(0, maxLength)}…` : text;
+}
+
+function previewFor(message) {
+  const signal = decodeSignalMessage(message.content);
+  if (signal) return `📡 WebRTC ${signal.kind} signal`;
+  return truncatePreview(message.content);
 }
 
 function conversationPeers(state) {
@@ -110,7 +117,7 @@ function draw(content, app) {
                 },
                 displayNameFor(state, peerPubkeyHex),
               ),
-              h('span', { class: 'muted small' }, last ? truncatePreview(last.content) : 'No messages yet'),
+              h('span', { class: 'muted small' }, last ? previewFor(last) : 'No messages yet'),
             ],
           );
         }),
@@ -135,12 +142,26 @@ function renderConversationDetail(content, app, peerPubkeyHex) {
     { class: 'dm-history' },
     messages.length === 0
       ? [h('p', { class: 'muted' }, 'No messages yet — say hello!')]
-      : messages.map((m) =>
-          h('div', { class: `dm-message dm-${m.direction}` }, [
+      : messages.map((m) => {
+          const signal = decodeSignalMessage(m.content);
+          if (signal) {
+            return h('div', { class: `dm-message dm-${m.direction} dm-signal` }, [
+              h('div', { class: 'dm-message-body' }, `📡 WebRTC "${signal.kind}" signal for Live P2P`),
+              h('div', { class: 'button-row' }, [
+                h(
+                  'button',
+                  { class: 'link-btn', onClick: () => app.goToWebrtcTabWithSignal(signal.kind, signal.blob) },
+                  'Open in Live P2P',
+                ),
+              ]),
+              h('span', { class: 'muted small' }, relativeTime(m.createdAt)),
+            ]);
+          }
+          return h('div', { class: `dm-message dm-${m.direction}` }, [
             h('div', { class: 'dm-message-body', html: escapeHtml(m.content).replaceAll('\n', '<br>') }),
             h('span', { class: 'muted small' }, relativeTime(m.createdAt)),
-          ]),
-        ),
+          ]);
+        }),
   );
 
   const composer = h('div', { class: 'button-row' }, [
