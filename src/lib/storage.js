@@ -101,5 +101,6 @@ export const KEYS = {
   FEED_CACHE: 'feed-cache', // last-seen feed events, for offline viewing
   FOLLOWS: 'follows', // pubkeys (hex) the user follows, mirrors the kind-3 list
   PROFILE_CACHE: 'profile-cache', // cached kind-0 metadata for other pubkeys, keyed by hex
-  PRIVATE_NOTES: 'private-notes-vault', // encrypted private notes / DM placeholders
+  PRIVATE_NOTES: 'private-notes-vault', // encrypted private notes
+  DM_CONVERSATIONS: 'dm-conversations-vault', // encrypted NIP-17 direct message history, keyed by peer pubkey
 };

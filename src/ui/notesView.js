@@ -7,7 +7,7 @@ export function renderNotesView(content, app) {
     h('h2', {}, 'Private notes'),
     h('p', { class: 'muted' }, [
       'Anything you write here is encrypted at rest with your unlock passphrase and stored only in this browser — it is never sent to a relay. ',
-      'This doubles as a placeholder for future end-to-end encrypted direct messages: the same encrypted-vault pattern will wrap DM content once a transport (Nostr NIP-17/NIP-44 or a P2P channel) is wired in.',
+      'Use this for personal scratch notes. To message someone else, use the 💬 Messages tab instead — those are end-to-end encrypted (NIP-17) and actually sent over Nostr relays.',
     ]),
   ]);
 

@@ -5,6 +5,7 @@ import { renderFeedView } from './feedView.js';
 import { renderProfileView } from './profileView.js';
 import { renderPeopleView } from './peopleView.js';
 import { renderNotesView } from './notesView.js';
+import { renderMessagesView } from './messagesView.js';
 import { renderWebrtcView } from './webrtcView.js';
 import { renderSettingsView } from './settingsView.js';
 
@@ -13,6 +14,7 @@ const TABS = [
   { id: 'feed', label: '🗞️ Feed' },
   { id: 'people', label: '👥 People' },
   { id: 'profile', label: '🎨 Profile' },
+  { id: 'messages', label: '💬 Messages' },
   { id: 'notes', label: '🔒 Private Notes' },
   { id: 'webrtc', label: '📡 Live P2P' },
   { id: 'settings', label: '⚙️ Settings' },
@@ -87,6 +89,9 @@ export function mountApp(root, app) {
         break;
       case 'profile':
         renderProfileView(content, app);
+        break;
+      case 'messages':
+        renderMessagesView(content, app);
         break;
       case 'notes':
         renderNotesView(content, app);

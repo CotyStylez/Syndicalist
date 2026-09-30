@@ -5,6 +5,7 @@
 
 import { SimplePool, finalizeEvent, kinds, nip19 } from 'nostr-tools';
 import { secretKeyFromHex } from './identity.js';
+import { GIFT_WRAP_KIND } from './dm.js';
 
 export const NOTE_KIND = kinds.ShortTextNote; // 1
 export const REPOST_KIND = kinds.Repost; // 6
@@ -19,6 +20,7 @@ export class RelayHub {
     this.status = new Map(this.relayUrls.map((url) => [url, 'connecting']));
     this.onStatusChange = onStatusChange;
     this.feedSub = null;
+    this.dmSub = null;
   }
 
   setRelays(relayUrls) {
@@ -73,6 +75,35 @@ export class RelayHub {
   closeFeed() {
     this.feedSub?.close();
     this.feedSub = null;
+  }
+
+  /**
+   * Subscribes to incoming NIP-17 gift-wrapped direct messages addressed to
+   * `pubkeyHex` (i.e. events tagged `#p: [pubkeyHex]`). The caller is
+   * responsible for unwrapping each event — the relay/pool layer only ever
+   * sees the opaque gift wrap, never the plaintext message.
+   */
+  subscribeDirectMessages({ pubkeyHex, onEvent, sinceSecondsAgo = 60 * 60 * 24 * 30 }) {
+    this.dmSub?.close();
+    const filter = {
+      kinds: [GIFT_WRAP_KIND],
+      '#p': [pubkeyHex],
+      since: Math.floor(Date.now() / 1000) - sinceSecondsAgo,
+    };
+    this.dmSub = this.pool.subscribeMany(this.relayUrls, [filter], { onevent: onEvent });
+    return this.dmSub;
+  }
+
+  closeDirectMessages() {
+    this.dmSub?.close();
+    this.dmSub = null;
+  }
+
+  /** Publishes one or more already-signed gift-wrap events (see lib/dm.js). */
+  async publishDirectMessage({ giftWrapEvents }) {
+    const results = giftWrapEvents.flatMap((event) => this.pool.publish(this.relayUrls, event));
+    await Promise.allSettled(results);
+    return giftWrapEvents;
   }
 
   /** Publishes a signed text note and returns the finalized event. */
@@ -180,6 +211,7 @@ export class RelayHub {
 
   destroy() {
     this.closeFeed();
+    this.closeDirectMessages();
     this.pool.close(this.relayUrls);
   }
 }

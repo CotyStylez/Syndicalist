@@ -11,6 +11,7 @@ import { generateIdentity, importIdentity } from './lib/identity.js';
 import { sealAndStore, unseal, hasSealed, forget } from './lib/vault.js';
 import { getItem, setItem, clearAll, KEYS } from './lib/storage.js';
 import { RelayHub, DEFAULT_RELAYS, pubkeyFromInput } from './lib/relays.js';
+import { wrapDirectMessage, unwrapDirectMessage } from './lib/dm.js';
 
 const DEFAULT_PROFILE = {
   displayName: '',
@@ -58,6 +59,8 @@ export function createAppState() {
     profileCache: {}, // pubkeyHex -> { name, about, picture, ..., fetchedAt }
     relayStatus: {},
     privateNotes: [], // decrypted only in memory while unlocked
+    dmConversations: {}, // peerPubkeyHex -> [{ id, direction, content, createdAt }], decrypted only while unlocked
+    dmSubscriptionActive: false,
     relayHub: null,
     error: null,
   };
@@ -129,6 +132,7 @@ export function createAppState() {
         void ensureProfileCached(event.pubkey);
       },
     });
+    if (state.identity) startDmSubscription();
     notify();
     return hub;
   }
@@ -219,12 +223,94 @@ export function createAppState() {
     }
   }
 
+  /** Appends a message to an in-memory conversation (deduped by rumor id)
+   * and re-seals the whole conversation set to encrypted storage. No-op if
+   * the identity is locked (there's nothing to encrypt it with). */
+  async function _storeDmMessage(peerPubkeyHex, message) {
+    const existing = state.dmConversations[peerPubkeyHex] || [];
+    if (existing.some((m) => m.id === message.id)) return;
+    const updated = [...existing, message].sort((a, b) => a.createdAt - b.createdAt);
+    state.dmConversations = { ...state.dmConversations, [peerPubkeyHex]: updated };
+    if (state.sessionPassphrase) {
+      await sealAndStore(KEYS.DM_CONVERSATIONS, state.dmConversations, state.sessionPassphrase);
+    }
+    notifyFeed();
+  }
+
+  /** Encrypts and publishes a direct message to `recipientInput` (npub or
+   * hex), and records it in the local, encrypted conversation history. */
+  async function sendDirectMessage(recipientInput, content) {
+    if (!state.identity || !state.sessionPassphrase) throw new Error('Unlock your identity first.');
+    if (!state.relayHub) throw new Error('Connect to relays first.');
+    const recipientPubkeyHex = pubkeyFromInput(recipientInput);
+    if (recipientPubkeyHex === state.identity.publicKeyHex) {
+      throw new Error("You can't message yourself.");
+    }
+
+    const { wraps } = wrapDirectMessage({
+      content,
+      recipientPubkeyHex,
+      senderSecretKeyHex: state.identity.secretKeyHex,
+    });
+    const [selfWrap] = wraps;
+    await state.relayHub.publishDirectMessage({ giftWrapEvents: wraps });
+
+    // Unwrap our own self-copy to get the message's real rumor id/timestamp,
+    // so if the relay later echoes this same gift wrap back to us via the
+    // DM subscription, it dedupes instead of showing the message twice.
+    const rumor = unwrapDirectMessage({ giftWrapEvent: selfWrap, recipientSecretKeyHex: state.identity.secretKeyHex });
+    await _storeDmMessage(recipientPubkeyHex, {
+      id: rumor.id,
+      direction: 'out',
+      content: rumor.content,
+      createdAt: rumor.created_at,
+    });
+    void ensureProfileCached(recipientPubkeyHex);
+    return recipientPubkeyHex;
+  }
+
+  /** Subscribes to incoming gift-wrapped DMs for the current identity.
+   * Safe to call repeatedly — each call replaces the previous subscription
+   * on the same relay hub. No-op if locked or not yet connected to relays. */
+  function startDmSubscription() {
+    if (!state.identity || !state.relayHub) return;
+    state.relayHub.subscribeDirectMessages({
+      pubkeyHex: state.identity.publicKeyHex,
+      onEvent: (event) => {
+        if (!state.identity) return; // may have locked between subscribe and event arrival
+        try {
+          const rumor = unwrapDirectMessage({ giftWrapEvent: event, recipientSecretKeyHex: state.identity.secretKeyHex });
+          const peerPubkeyHex = rumor.pubkey === state.identity.publicKeyHex ? findRecipientTag(rumor) : rumor.pubkey;
+          if (!peerPubkeyHex) return;
+          void _storeDmMessage(peerPubkeyHex, {
+            id: rumor.id,
+            direction: rumor.pubkey === state.identity.publicKeyHex ? 'out' : 'in',
+            content: rumor.content,
+            createdAt: rumor.created_at,
+          });
+          void ensureProfileCached(peerPubkeyHex);
+        } catch {
+          // Not addressed to us, or not decryptable with our key — ignore.
+        }
+      },
+    });
+    state.dmSubscriptionActive = true;
+  }
+
+  /** For a self-copy rumor (sent by us), the actual peer is the first `p`
+   * tag recipient rather than the rumor's own pubkey. */
+  function findRecipientTag(rumor) {
+    const tag = rumor.tags.find((t) => t[0] === 'p');
+    return tag ? tag[1] : null;
+  }
+
   async function generateNewIdentity(passphrase) {
     const identity = generateIdentity();
     await sealAndStore(KEYS.IDENTITY_VAULT, identity, passphrase);
     state.identity = identity;
     state.vaultExists = true;
     state.sessionPassphrase = passphrase;
+    if (state.relayHub) startDmSubscription();
     notify();
     return identity;
   }
@@ -235,6 +321,7 @@ export function createAppState() {
     state.identity = identity;
     state.vaultExists = true;
     state.sessionPassphrase = passphrase;
+    if (state.relayHub) startDmSubscription();
     notify();
     return identity;
   }
@@ -246,14 +333,20 @@ export function createAppState() {
     state.sessionPassphrase = passphrase;
     const notes = await unseal(KEYS.PRIVATE_NOTES, passphrase).catch(() => []);
     state.privateNotes = notes || [];
+    const conversations = await unseal(KEYS.DM_CONVERSATIONS, passphrase).catch(() => ({}));
+    state.dmConversations = conversations || {};
+    if (state.relayHub) startDmSubscription();
     notify();
     return identity;
   }
 
   function lockIdentity() {
+    state.relayHub?.closeDirectMessages();
+    state.dmSubscriptionActive = false;
     state.identity = null;
     state.sessionPassphrase = null;
     state.privateNotes = [];
+    state.dmConversations = {};
     notify();
   }
 
@@ -308,16 +401,22 @@ export function createAppState() {
     state.follows = [];
     state.profileCache = {};
     state.privateNotes = [];
+    state.dmConversations = {};
+    state.dmSubscriptionActive = false;
     notify();
   }
 
   async function forgetIdentityOnly() {
     await forget(KEYS.IDENTITY_VAULT);
     await forget(KEYS.PRIVATE_NOTES);
+    await forget(KEYS.DM_CONVERSATIONS);
+    state.relayHub?.closeDirectMessages();
     state.identity = null;
     state.sessionPassphrase = null;
     state.vaultExists = false;
     state.privateNotes = [];
+    state.dmConversations = {};
+    state.dmSubscriptionActive = false;
     notify();
   }
 
@@ -343,6 +442,8 @@ export function createAppState() {
     ensureProfileCached,
     addPrivateNote,
     deletePrivateNote,
+    sendDirectMessage,
+    startDmSubscription,
     panicWipe,
     forgetIdentityOnly,
   };

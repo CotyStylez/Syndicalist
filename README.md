@@ -12,7 +12,8 @@ Sydacalist is a single-page, browser-only app (no backend server) that lets you:
 - Post, like, repost, and comment on a **decentralized social feed** carried over public Nostr relays.
 - **Follow people** by npub/hex, view a locally cached name for them, and switch the feed between **Global** and **Following-only** modes.
 - Customize a **MySpace-style personal profile page** — theme colors, banner/avatar placeholders, and freeform widgets — and optionally publish it publicly.
-- Keep **private notes** encrypted at rest, as a placeholder for future end-to-end encrypted messaging.
+- Send **end-to-end encrypted direct messages** (NIP-17 gift-wrapped DMs) that hide both content and metadata from relays.
+- Keep **private notes** encrypted at rest as personal, single-user scratch space.
 - Try a **peer-to-peer WebRTC demo** (data-channel chat + optional camera preview) using manual copy/paste signaling, with no signaling server required.
 
 ## How to run it
@@ -46,13 +47,15 @@ src/
     storage.js    IndexedDB wrapper — the local-first persistence layer
     vault.js      Encrypted-at-rest storage built on crypto.js + storage.js
     relays.js     Nostr relay connections, publishing, and feed subscriptions
+    dm.js         NIP-17 gift-wrapped direct-message encrypt/decrypt helpers
     webrtc.js     Manual-signaling WebRTC peer connection helper
   state.js        Central in-memory app state + actions (no UI code)
   ui/             One render function per tab (Identity, Feed, People, Profile,
-                  Private Notes, Live P2P, Settings), plus the app shell in ui/app.js
+                  Messages, Private Notes, Live P2P, Settings), plus the app
+                  shell in ui/app.js
   utils/          Tiny DOM-building and formatting helpers (no framework)
 test/             Unit tests for the pure-logic modules (crypto, identity,
-                  storage, vault, WebRTC signaling)
+                  storage, vault, DMs, WebRTC signaling)
 ```
 
 There is no UI framework — views are built with a tiny `h()`/`mount()` DOM helper (`src/utils/dom.js`) and re-rendered imperatively. This keeps the dependency footprint minimal (`nostr-tools` is the only runtime dependency) while remaining easy to read end-to-end.
@@ -101,8 +104,8 @@ The Profile tab is the MySpace-inspired centerpiece: pick a theme color, accent/
 ## Encryption
 
 - **Identity:** your `nsec` is never stored in plaintext. It's sealed into an encrypted envelope (AES-GCM + PBKDF2) under your unlock passphrase before it ever touches IndexedDB.
-- **Private notes:** encrypted the same way as identity, and clearly separated in the UI from public posts.
-- **DMs (scaffolded, not implemented):** the Private Notes tab exists as an explicit placeholder for private/DM-style content and uses the same encrypted-vault primitives that a real DM feature would need. Wiring up an actual transport (e.g. Nostr NIP-17/NIP-44 sealed DMs, or a WebRTC data channel) is future work — see below.
+- **Private notes:** encrypted the same way as identity, and clearly separated in the UI from public posts. Purely single-user scratch space (not sent anywhere).
+- **Direct messages (implemented via NIP-17):** the 💬 Messages tab sends real end-to-end encrypted DMs using Nostr's NIP-17 (sealed & gift-wrapped direct messages, built on NIP-44 encryption and NIP-59 gift-wrapping, via `nostr-tools`). Both the message content **and** metadata (real sender, timestamps) are hidden inside a "rumor" that's sealed and then wrapped in a throwaway-keyed "gift wrap" event — relays and outside observers only ever see an anonymous wrapper, not who is messaging whom. Decrypted DM history is additionally encrypted at rest locally using the same passphrase-protected vault as your identity key and private notes — lock your identity (or lose the passphrase) and local DM history becomes inaccessible again until unlock.
 
 ## WebRTC / live features
 
@@ -121,7 +124,7 @@ This is intentionally a first pass. Notable gaps, by design:
 
 - **No TURN relay** — WebRTC connections can fail on restrictive networks. A future version could offer an optional TURN server or fall back to relaying data over Nostr.
 - **No decentralized signaling** — WebRTC signaling is manual copy/paste for now; automating it (e.g. over Nostr DMs) is a natural next step.
-- **No E2EE DMs yet** — Private Notes are encrypted at rest but not yet sent to anyone; real DMs need a NIP-17/NIP-44-style transport.
+- **DM delivery caveats** — NIP-17 gift-wrap (kind 1059) events are not yet universally supported/retained by all public relays, so delivery isn't guaranteed on every relay; there are no delivery or read receipts; DM history only syncs to a second device/browser if that device's relays still have the original gift-wrap events (relays may not retain them indefinitely); and this first pass supports 1:1 conversations only (no group DMs).
 - **No media/IPFS storage** — image/video attachments and distributed media storage (IPFS/Hypercore) are out of scope for this iteration.
 - **Simple feed ranking** — within Global or Following mode, the feed is reverse-chronological; there's no client-side interest ranking, muting, or spam filtering yet.
 - **No mobile app** — this is a browser-only prototype.
