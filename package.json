@@ -1,0 +1,27 @@
+{
+  "name": "sydacalist",
+  "version": "1.0.0",
+  "description": "Decentralized, privacy-first social platform prototype using Nostr and WebRTC",
+  "main": "index.html",
+  "scripts": {
+    "test": "node --test",
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "repository": {
+    "type": "git",
+    "url": "http://localhost:26831/CotyStylez/sydacalist"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "type": "module",
+  "dependencies": {
+    "nostr-tools": "^2.25.2"
+  },
+  "devDependencies": {
+    "fake-indexeddb": "^6.2.5",
+    "vite": "^8.3.1"
+  }
+}
