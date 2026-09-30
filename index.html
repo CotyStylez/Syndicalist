@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="A privacy-first social platform proof of concept built on Nostr and WebRTC."
+    />
+    <meta name="theme-color" content="#111827" />
+    <title>sydacalist — private by design</title>
+  </head>
+  <body>
+    <div class="shell">
+      <header class="site-header">
+        <a class="wordmark" href="/" aria-label="sydacalist home">sydacalist<span>.</span></a>
+        <p class="header-note">A small, open experiment in private-by-design social networking.</p>
+      </header>
+
+      <main>
+        <section class="intro">
+          <p class="eyebrow">A decentralized social prototype</p>
+          <h1>Your identity. Your connections.</h1>
+          <p>
+            Posts travel through Nostr relays. Peer conversations can connect directly
+            between browsers. Your secret key stays in this tab.
+          </p>
+        </section>
+
+        <div class="columns">
+          <div class="primary-column">
+            <section class="card" aria-labelledby="identity-title">
+              <div class="section-heading">
+                <div>
+                  <p class="eyebrow">01 / Identity</p>
+                  <h2 id="identity-title">Your Nostr key</h2>
+                </div>
+                <span id="identity-status" class="status-pill">No key loaded</span>
+              </div>
+              <p class="muted">
+                Generate a key or import an existing nsec/hex private key. Keys are kept
+                in memory only and are cleared when you close or reload this tab.
+              </p>
+              <div class="button-row">
+                <button id="generate-key" class="button button-primary" type="button">
+                  Generate key
+                </button>
+                <button id="export-key" class="button button-secondary" type="button" disabled>
+                  Reveal export key
+                </button>
+              </div>
+              <form id="import-form" class="form-row">
+                <label class="sr-only" for="private-key-input">Private key (nsec or hex)</label>
+                <input
+                  id="private-key-input"
+                  type="password"
+                  autocomplete="off"
+                  autocapitalize="off"
+                  spellcheck="false"
+                  placeholder="Paste nsec or 64-character hex private key"
+                />
+                <button class="button button-secondary" type="submit">Import</button>
+              </form>
+              <label class="field-label" for="public-key">Public key (npub)</label>
+              <input id="public-key" class="mono" type="text" readonly placeholder="Not connected" />
+              <label class="field-label" for="secret-export">Private key export</label>
+              <textarea
+                id="secret-export"
+                class="mono"
+                rows="2"
+                readonly
+                hidden
+                aria-label="Private key export"
+              ></textarea>
+              <p id="identity-message" class="message" role="status" aria-live="polite"></p>
+              <p class="notice">
+                Anyone with your private key can impersonate you. Never share it. Nostr
+                posts are public; a relay can see your IP address and activity.
+              </p>
+            </section>
+
+            <section class="card" aria-labelledby="feed-title">
+              <div class="section-heading">
+                <div>
+                  <p class="eyebrow">02 / Public notes</p>
+                  <h2 id="feed-title">Nostr feed</h2>
+                </div>
+                <span id="relay-status" class="status-pill">Disconnected</span>
+              </div>
+              <label class="field-label" for="relay-input">Public relays (comma-separated)</label>
+              <input
+                id="relay-input"
+                type="text"
+                value="wss://relay.damus.io, wss://nos.lol"
+                autocomplete="off"
+                spellcheck="false"
+              />
+              <div class="button-row">
+                <button id="connect-relays" class="button button-primary" type="button">
+                  Connect relays
+                </button>
+                <button id="disconnect-relays" class="button button-secondary" type="button" disabled>
+                  Disconnect
+                </button>
+              </div>
+              <form id="note-form">
+                <label class="field-label" for="note-input">Write a public note</label>
+                <textarea
+                  id="note-input"
+                  rows="3"
+                  maxlength="2000"
+                  placeholder="Share a thought with your Nostr network…"
+                  required
+                ></textarea>
+                <div class="button-row button-row-end">
+                  <span id="note-message" class="message" role="status" aria-live="polite"></span>
+                  <button id="publish-note" class="button button-primary" type="submit" disabled>
+                    Publish note
+                  </button>
+                </div>
+              </form>
+              <div id="feed" class="feed" aria-live="polite" aria-label="Recent public notes">
+                <p class="empty-state">Connect to a relay to load recent notes.</p>
+              </div>
+            </section>
+          </div>
+
+          <div class="secondary-column">
+            <section class="card" aria-labelledby="peer-title">
+              <div class="section-heading">
+                <div>
+                  <p class="eyebrow">03 / Peer connection</p>
+                  <h2 id="peer-title">Connect directly</h2>
+                </div>
+                <span id="peer-status" class="status-pill">Not connected</span>
+              </div>
+              <p class="muted">
+                Exchange an offer and answer out of band to open an encrypted WebRTC
+                data channel. No signaling server is used.
+              </p>
+              <div class="button-row">
+                <button id="prepare-camera" class="button button-secondary" type="button">
+                  Prepare camera
+                </button>
+                <button id="stop-camera" class="button button-secondary" type="button" disabled>
+                  Stop camera
+                </button>
+              </div>
+              <div class="video-grid">
+                <video id="local-video" autoplay muted playsinline hidden></video>
+                <video id="remote-video" autoplay playsinline hidden></video>
+              </div>
+              <div class="button-row">
+                <button id="create-offer" class="button button-primary" type="button">
+                  Create offer
+                </button>
+                <button id="create-answer" class="button button-secondary" type="button">
+                  Answer pasted offer
+                </button>
+              </div>
+              <label class="field-label" for="signal-input">Paste peer offer or answer</label>
+              <textarea
+                id="signal-input"
+                class="mono"
+                rows="5"
+                autocomplete="off"
+                spellcheck="false"
+                placeholder="Paste signaling JSON from your peer"
+              ></textarea>
+              <div class="button-row">
+                <button id="apply-answer" class="button button-secondary" type="button">
+                  Apply answer
+                </button>
+                <button id="copy-signal" class="button button-secondary" type="button" disabled>
+                  Copy my signal
+                </button>
+              </div>
+              <label class="field-label" for="signal-output">Your signaling JSON</label>
+              <textarea
+                id="signal-output"
+                class="mono"
+                rows="5"
+                readonly
+                placeholder="Your offer or answer will appear here"
+              ></textarea>
+              <form id="peer-message-form">
+                <label class="field-label" for="peer-message">Peer message</label>
+                <div class="form-row">
+                  <input id="peer-message" type="text" maxlength="1000" placeholder="Message your peer…" />
+                  <button id="send-peer-message" class="button button-primary" type="submit" disabled>
+                    Send
+                  </button>
+                </div>
+              </form>
+              <div id="peer-chat" class="peer-chat" aria-live="polite" aria-label="Peer messages"></div>
+              <p id="peer-message-status" class="message" role="status" aria-live="polite"></p>
+              <p class="notice">
+                A public STUN service helps browsers find each other; some networks still
+                require TURN, which this demo does not provide. Sharing signaling can
+                reveal network details. Only exchange it with someone you trust.
+              </p>
+            </section>
+          </div>
+        </div>
+      </main>
+
+      <footer>
+        <span>Open protocols, no ads, no analytics, no central account.</span>
+        <a href="https://github.com/CotyStylez/sydacalist" rel="noreferrer">View the source</a>
+      </footer>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
