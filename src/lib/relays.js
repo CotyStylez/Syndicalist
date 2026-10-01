@@ -6,6 +6,7 @@
 import { SimplePool, finalizeEvent, kinds, nip19 } from 'nostr-tools';
 import { secretKeyFromHex } from './identity.js';
 import { GIFT_WRAP_KIND } from './dm.js';
+import { ZAP_RECEIPT_KIND } from './zap.js';
 
 export const NOTE_KIND = kinds.ShortTextNote; // 1
 export const REPOST_KIND = kinds.Repost; // 6
@@ -21,6 +22,7 @@ export class RelayHub {
     this.onStatusChange = onStatusChange;
     this.feedSub = null;
     this.dmSub = null;
+    this.zapSub = null;
   }
 
   setRelays(relayUrls) {
@@ -97,6 +99,28 @@ export class RelayHub {
   closeDirectMessages() {
     this.dmSub?.close();
     this.dmSub = null;
+  }
+
+  /**
+   * Subscribes to incoming NIP-57 zap receipts (kind 9735) addressed to
+   * `pubkeyHex` — i.e. tips for that person. Receipts are public by design
+   * (that's what makes a zap a verifiable "proof of payment" rather than
+   * just a hopeful animation), so no decryption is needed here.
+   */
+  subscribeZapReceipts({ pubkeyHex, onEvent, sinceSecondsAgo = 60 * 60 * 6 }) {
+    this.zapSub?.close();
+    const filter = {
+      kinds: [ZAP_RECEIPT_KIND],
+      '#p': [pubkeyHex],
+      since: Math.floor(Date.now() / 1000) - sinceSecondsAgo,
+    };
+    this.zapSub = this.pool.subscribeMany(this.relayUrls, [filter], { onevent: onEvent });
+    return this.zapSub;
+  }
+
+  closeZapReceipts() {
+    this.zapSub?.close();
+    this.zapSub = null;
   }
 
   /** Publishes one or more already-signed gift-wrap events (see lib/dm.js). */
@@ -212,6 +236,7 @@ export class RelayHub {
   destroy() {
     this.closeFeed();
     this.closeDirectMessages();
+    this.closeZapReceipts();
     this.pool.close(this.relayUrls);
   }
 }

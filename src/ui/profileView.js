@@ -2,7 +2,11 @@ import { h, mount } from '../utils/dom.js';
 
 export function renderProfileView(content, app) {
   const { state } = app;
-  const draft = { ...state.profile, widgets: state.profile.widgets.map((w) => ({ ...w })) };
+  const draft = {
+    ...state.profile,
+    widgets: state.profile.widgets.map((w) => ({ ...w })),
+    payLinks: (state.profile.payLinks || []).map((l) => ({ ...l })),
+  };
 
   function field(label, input) {
     return h('div', { class: 'field' }, [h('label', {}, label), input]);
@@ -71,6 +75,61 @@ export function renderProfileView(content, app) {
         },
         '+ Add widget',
       ),
+      h('h4', {}, '⚡ Tips & support'),
+      h('p', { class: 'muted small' }, [
+        'Optional. Your Lightning address powers real, no-platform-cut tip stickers during Live P2P sessions (see README for how zaps work). ',
+        'Pay links are just plain external buttons (Cash App, Venmo, PayPal.me, anything) — this app never touches that money or sees if it was paid.',
+      ]),
+      field(
+        '⚡ Lightning address (lud16, e.g. you@getalby.com)',
+        h('input', {
+          type: 'text',
+          value: draft.lightningAddress,
+          placeholder: 'you@getalby.com',
+          onInput: (e) => (draft.lightningAddress = e.target.value.trim()),
+        }),
+      ),
+      h(
+        'div',
+        { class: 'widget-editor' },
+        draft.payLinks.map((link, index) =>
+          h('div', { class: 'widget-edit-row' }, [
+            h('input', {
+              type: 'text',
+              value: link.label,
+              placeholder: 'Label (e.g. Cash App)',
+              onInput: (e) => (link.label = e.target.value),
+            }),
+            h('input', {
+              type: 'text',
+              value: link.url,
+              placeholder: 'https://cash.app/$yourtag',
+              onInput: (e) => (link.url = e.target.value),
+            }),
+            h(
+              'button',
+              {
+                class: 'link-btn',
+                onClick: () => {
+                  draft.payLinks.splice(index, 1);
+                  draw();
+                },
+              },
+              'Remove link',
+            ),
+          ]),
+        ),
+      ),
+      h(
+        'button',
+        {
+          onClick: () => {
+            draft.payLinks.push({ label: '', url: '' });
+            draw();
+          },
+        },
+        '+ Add pay link',
+      ),
       h('div', { class: 'button-row' }, [
         h('button', { class: 'primary', onClick: async () => await app.saveProfile(draft) }, 'Save locally'),
         h(
@@ -81,8 +140,10 @@ export function renderProfileView(content, app) {
             onClick: async () => {
               await app.saveProfile(draft);
               try {
+                const metadata = { name: draft.displayName, about: draft.bio, sydacalist: draft };
+                if (draft.lightningAddress) metadata.lud16 = draft.lightningAddress;
                 await state.relayHub?.publishProfileMetadata({
-                  metadata: { name: draft.displayName, about: draft.bio, sydacalist: draft },
+                  metadata,
                   secretKeyHex: state.identity.secretKeyHex,
                 });
               } catch (err) {
@@ -93,7 +154,7 @@ export function renderProfileView(content, app) {
           'Save & publish to Nostr',
         ),
       ]),
-      h('p', { class: 'muted small' }, 'Publishing sends your display name, bio, and styling as public Nostr profile metadata (kind 0). Everything else stays local until you publish.'),
+      h('p', { class: 'muted small' }, 'Publishing sends your display name, bio, styling, and Lightning address (if set) as public Nostr profile metadata (kind 0). Everything else stays local until you publish.'),
     ]);
 
     const preview = h(
@@ -113,6 +174,15 @@ export function renderProfileView(content, app) {
           { class: 'preview-widgets' },
           draft.widgets.map((widget) => h('div', { class: 'preview-widget' }, [h('strong', {}, widget.title), h('p', {}, widget.content)])),
         ),
+        draft.payLinks.filter((l) => l.url).length
+          ? h(
+              'div',
+              { class: 'preview-pay-links' },
+              draft.payLinks
+                .filter((l) => l.url)
+                .map((l) => h('a', { href: l.url, target: '_blank', rel: 'noopener noreferrer', class: 'pay-link-btn' }, `💸 ${l.label || l.url}`)),
+            )
+          : null,
       ],
     );
 

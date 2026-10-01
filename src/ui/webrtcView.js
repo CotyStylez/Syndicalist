@@ -1,5 +1,6 @@
 import { h, mount } from '../utils/dom.js';
 import { PeerSession, encodeSignalMessage } from '../lib/webrtc.js';
+import { pubkeyFromInput } from '../lib/relays.js';
 
 // This view manages a live WebRTC peer connection. Its state (the peer
 // connection, local media stream, signaling text) is kept at module scope
@@ -18,6 +19,28 @@ let connectionState = 'new';
 let dmRecipientValue = '';
 let dmSendBusy = false;
 let dmSendStatus = null;
+let activePackId = null;
+let hostNpubInput = '';
+let tipBusy = false;
+let tipStatus = null;
+let pendingInvoice = null; // { invoice, sats, label, paid }
+let stickerBursts = []; // transient { id, art } entries, auto-removed after the CSS animation
+let zapListenerBound = null; // the `app` instance we've already subscribed, to avoid double-subscribing
+
+const STICKER_MSG_PREFIX = 'sydacalist-sticker:v1:';
+
+function encodeStickerMessage(sticker) {
+  return STICKER_MSG_PREFIX + JSON.stringify({ kind: sticker.kind, data: sticker.data, label: sticker.label, sats: sticker.sats || 0 });
+}
+
+function decodeStickerMessage(text) {
+  if (typeof text !== 'string' || !text.startsWith(STICKER_MSG_PREFIX)) return null;
+  try {
+    return JSON.parse(text.slice(STICKER_MSG_PREFIX.length));
+  } catch {
+    return null;
+  }
+}
 
 export function renderWebrtcView(content, app) {
   if (app.state.identity && !app.state.relayHub) app.connectRelays();
@@ -27,6 +50,14 @@ export function renderWebrtcView(content, app) {
     if (pending.kind === 'offer') pastedOffer = pending.blob;
     else pastedAnswer = pending.blob;
   }
+  // Zap receipts arrive asynchronously over relays, well after the invoice
+  // was requested — subscribe once (module scope persists across
+  // re-renders/tab switches) so a confirmed tip updates this view even if
+  // the user has since looked away and come back.
+  if (zapListenerBound !== app) {
+    zapListenerBound = app;
+    app.subscribeFeedUpdates(() => draw(content, app));
+  }
   draw(content, app);
 }
 
@@ -34,7 +65,22 @@ function ensureSession(content, app) {
   if (session) return session;
   session = new PeerSession({
     onMessage: (msg) => {
-      chatLog = [...chatLog, { from: 'them', text: msg }];
+      const sticker = decodeStickerMessage(msg);
+      if (sticker) {
+        chatLog = [
+          ...chatLog,
+          {
+            from: 'them-sticker',
+            text: sticker.sats
+              ? `sent a tip sticker worth ${sticker.sats} sats`
+              : 'sent a sticker',
+            sticker,
+          },
+        ];
+        spawnBurst(sticker);
+      } else {
+        chatLog = [...chatLog, { from: 'them', text: msg }];
+      }
       draw(content, app);
     },
     onChannelOpen: () => {
@@ -55,6 +101,23 @@ function ensureSession(content, app) {
     },
   });
   return session;
+}
+
+/** Shows a brief floating sticker animation (TikTok-style burst) that
+ * removes itself once the CSS animation finishes. Purely cosmetic — the
+ * actual tip confirmation (if any) comes separately via a zap receipt. */
+function spawnBurst(sticker) {
+  const id = Math.random().toString(36).slice(2);
+  stickerBursts = [...stickerBursts, { id, sticker }];
+  setTimeout(() => {
+    stickerBursts = stickerBursts.filter((b) => b.id !== id);
+  }, 1800);
+}
+
+function renderStickerArt(sticker) {
+  if (sticker.kind === 'emoji') return h('span', {}, sticker.data);
+  if (sticker.kind === 'svg') return h('span', { html: sticker.data });
+  return h('img', { src: sticker.data, alt: sticker.label });
 }
 
 function draw(content, app) {
@@ -200,13 +263,68 @@ function draw(content, app) {
     ]);
   }
 
+  const packs = app.state.stickerPacks || [];
+  if (!activePackId && packs.length) activePackId = packs[0].id;
+  const activePack = packs.find((p) => p.id === activePackId) || packs[0] || null;
+
+  const tipCard = h('section', { class: 'card' }, [
+    h('h3', {}, '💸 Tip the host'),
+    h('p', { class: 'muted small' }, [
+      "Enter the host's npub once, then tap a sticker with a sats price to request a Lightning invoice (NIP-57 zap) addressed directly to them — ",
+      'no platform cut, no account with this app. A ⚡ confirmation only appears once their relay(s) publish the public zap receipt.',
+    ]),
+    h('input', {
+      type: 'text',
+      placeholder: "Host's npub (only needed for tip stickers)",
+      value: hostNpubInput,
+      onInput: (e) => (hostNpubInput = e.target.value),
+    }),
+    packs.length > 1
+      ? h(
+          'select',
+          { onChange: (e) => { activePackId = e.target.value; draw(content, app); } },
+          packs.map((p) => h('option', { value: p.id, selected: activePackId === p.id ? '' : undefined }, p.name)),
+        )
+      : null,
+    h(
+      'div',
+      { class: 'sticker-tray' },
+      (activePack?.stickers || []).map((sticker) =>
+        h(
+          'button',
+          {
+            class: 'sticker-btn',
+            title: sticker.label,
+            onClick: () => sendSticker(content, app, sticker),
+          },
+          [renderStickerArt(sticker), sticker.sats ? h('span', { class: 'sticker-price' }, `${sticker.sats} sats`) : null],
+        ),
+      ),
+    ),
+    !packs.length ? h('p', { class: 'muted small' }, 'No sticker packs yet — create one in the 🎉 Stickers tab.') : null,
+    tipBusy ? h('p', { class: 'muted small' }, 'Requesting invoice…') : null,
+    tipStatus ? h('p', { class: 'muted small' }, tipStatus) : null,
+    pendingInvoice && !pendingInvoice.paid
+      ? h('div', { class: 'zap-invoice-box' }, [
+          h('p', {}, `⚡ Invoice for ${pendingInvoice.sats} sats (${pendingInvoice.label}) — pay with any Lightning wallet:`),
+          h('textarea', { rows: 3, readonly: '', value: pendingInvoice.invoice }),
+        ])
+      : null,
+    renderZapReceipts(app),
+  ]);
+
   const chatSection = h('section', { class: 'card' }, [
-    h('h3', {}, 'Data channel chat'),
+    h('h3', {}, 'Live chat'),
     h(
       'div',
       { class: 'chat-log' },
-      chatLog.map((entry) => h('div', { class: `chat-line chat-${entry.from}` }, entry.text)),
+      chatLog.map((entry) =>
+        entry.sticker
+          ? h('div', { class: 'chat-line chat-sticker-line' }, [renderStickerArt(entry.sticker), ` ${entry.text}`])
+          : h('div', { class: `chat-line chat-${entry.from}` }, entry.text),
+      ),
     ),
+    h('div', { class: 'sticker-burst-layer' }, stickerBursts.map((b) => h('span', { class: 'sticker-burst' }, [renderStickerArt(b.sticker)]))),
     h('div', { class: 'button-row' }, [
       h('input', { type: 'text', placeholder: 'Say hello…', value: chatDraft, onInput: (e) => (chatDraft = e.target.value) }),
       h(
@@ -229,10 +347,70 @@ function draw(content, app) {
     ]),
   ]);
 
-  mount(content, intro, roleChooser, videoRow, role ? signalingSection : null, chatSection);
+  mount(content, intro, roleChooser, videoRow, role ? signalingSection : null, tipCard, chatSection);
 
   const localVideo = content.querySelector('#local-video');
   if (localVideo && localStream) localVideo.srcObject = localStream;
+}
+
+function renderZapReceipts(app) {
+  const receipts = app.state.zapReceipts || [];
+  if (!receipts.length) return null;
+  return h('div', { class: 'chat-log' }, [
+    h('strong', {}, 'Recent confirmed zaps to you:'),
+    ...receipts
+      .slice(0, 10)
+      .map((r) => h('div', { class: 'chat-line chat-zap-line' }, `⚡ ${r.sats} sats received`)),
+  ]);
+}
+
+/** Sends a sticker over the data channel (so the other peer can render and
+ * react to it immediately), bursts it locally, and — for stickers with a
+ * sats price — requests a NIP-57 zap invoice addressed to the host so the
+ * "tip" isn't just a hopeful animation but a real payment request. */
+async function sendSticker(content, app, sticker) {
+  if (!session) {
+    app.setError('Connect to a peer first.');
+    return;
+  }
+  const sent = session.send(encodeStickerMessage(sticker));
+  chatLog = [
+    ...chatLog,
+    { from: 'me-sticker', text: sticker.sats ? `you sent a tip sticker worth ${sticker.sats} sats` : 'you sent a sticker', sticker },
+  ];
+  spawnBurst(sticker);
+  draw(content, app);
+  if (!sent) {
+    app.setError('Data channel is not open yet — the sticker was shown locally only.');
+  }
+
+  if (!sticker.sats) return;
+  tipStatus = null;
+  pendingInvoice = null;
+  if (!hostNpubInput.trim()) {
+    tipStatus = "Enter the host's npub above to send a real tip for this sticker.";
+    draw(content, app);
+    return;
+  }
+  tipBusy = true;
+  draw(content, app);
+  try {
+    const hostPubkeyHex = pubkeyFromInput(hostNpubInput);
+    const { invoice, paid } = await app.sendZapTip({
+      hostPubkeyHex,
+      amountSats: sticker.sats,
+      comment: sticker.label,
+    });
+    pendingInvoice = { invoice, sats: sticker.sats, label: sticker.label, paid };
+    tipStatus = paid
+      ? '✅ Paid automatically via your Lightning wallet extension.'
+      : '⚡ Invoice ready — pay it with any Lightning wallet (scan/copy above).';
+  } catch (err) {
+    tipStatus = `Could not request a tip invoice: ${err.message}`;
+  } finally {
+    tipBusy = false;
+    draw(content, app);
+  }
 }
 
 function resetSession() {

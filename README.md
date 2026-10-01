@@ -15,6 +15,8 @@ Sydacalist is a single-page, browser-only app (no backend server) that lets you:
 - Send **end-to-end encrypted direct messages** (NIP-17 gift-wrapped DMs) that hide both content and metadata from relays.
 - Keep **private notes** encrypted at rest as personal, single-user scratch space.
 - Try a **peer-to-peer WebRTC demo** (data-channel chat + optional camera preview) with no signaling server required — exchange the connection setup via manual copy/paste, or deliver it as an encrypted direct message.
+- Send **TikTok-style stickers** during a Live P2P session from a fully local, customizable **sticker library** (🎉 Stickers tab), and tip a host in real Bitcoin Lightning sats via **NIP-57 "zaps"** — no platform cut, no payment processor, no backend.
+- Add plain external **"pay me however you like" links** (Cash App, Venmo, PayPal.me, anything) to your profile, for casual tipping outside the app entirely.
 
 ## How to run it
 
@@ -49,10 +51,12 @@ src/
     relays.js     Nostr relay connections, publishing, and feed subscriptions
     dm.js         NIP-17 gift-wrapped direct-message encrypt/decrypt helpers
     webrtc.js     Manual-signaling WebRTC peer connection helper
+    stickers.js   Local-first, user-customizable sticker/tip-pack library
+    zap.js        NIP-57 "zap" (Lightning tip) invoice requests + receipt parsing
   state.js        Central in-memory app state + actions (no UI code)
   ui/             One render function per tab (Identity, Feed, People, Profile,
-                  Messages, Private Notes, Live P2P, Settings), plus the app
-                  shell in ui/app.js
+                  Messages, Private Notes, Live P2P, Stickers, Settings), plus
+                  the app shell in ui/app.js
   utils/          Tiny DOM-building and formatting helpers (no framework)
 test/             Unit tests for the pure-logic modules (crypto, identity,
                   storage, vault, DMs, WebRTC signaling)
@@ -66,7 +70,8 @@ There is no UI framework — views are built with a tiny `h()`/`mount()` DOM hel
 - Your `npub` (public key).
 - Notes, likes, reposts, and comments you publish.
 - Your follow list, if you publish one.
-- Profile metadata (display name, bio, styling) — only if you click "Save & publish to Nostr".
+- Profile metadata (display name, bio, styling, Lightning address) — only if you click "Save & publish to Nostr".
+- Zap receipts (NIP-57) — a tip you send or receive is, by design, a public, verifiable payment proof on the relays, not private data.
 
 **Private, encrypted at rest in this browser:**
 - Your `nsec` (private key) — sealed with AES-GCM using a key derived from your unlock passphrase via PBKDF2 (210,000 iterations, SHA-256). See `src/lib/crypto.js` and `src/lib/vault.js`.
@@ -75,6 +80,7 @@ There is no UI framework — views are built with a tiny `h()`/`mount()` DOM hel
 **Local-only, never transmitted anywhere:**
 - Draft posts, your relay list, and UI preferences — stored in IndexedDB (`src/lib/storage.js`).
 - The cached feed of recently seen posts, so the app has something to show offline.
+- Your sticker packs/artwork (emoji, SVG, or image stickers you create) — local by default; only lightweight sticker data is shared peer-to-peer during a live session with whoever you're directly connected to, never uploaded anywhere.
 
 **What Sydacalist deliberately does *not* do:**
 - No central account database — there is nothing to breach or subpoena on our end, because there is no "our end".
@@ -99,7 +105,20 @@ All app state — identity vault, profile, relay list, drafts, preferences, foll
 
 ## Customizable profile
 
-The Profile tab is the MySpace-inspired centerpiece: pick a theme color, accent/background color, layout (classic/grid/minimal), banner and avatar emoji placeholders, and freeform widgets (e.g. "Now Playing", "Top Friends"). Changes are saved locally by default; "Save & publish to Nostr" additionally broadcasts your display name, bio, and styling as public Nostr profile metadata (kind 0).
+The Profile tab is the MySpace-inspired centerpiece: pick a theme color, accent/background color, layout (classic/grid/minimal), banner and avatar emoji placeholders, and freeform widgets (e.g. "Now Playing", "Top Friends"). Changes are saved locally by default; "Save & publish to Nostr" additionally broadcasts your display name, bio, styling, and Lightning address (if set) as public Nostr profile metadata (kind 0). You can also add any number of plain **external pay links** (Cash App `$cashtag`, Venmo handle, PayPal.me, etc.) — these are just clickable buttons; the app never integrates with those services' APIs, never sees whether they were paid, and never touches that money.
+
+## Tipping & stickers (no platform cut, no data center)
+
+Real-money tip integrations like Cash App or Venmo don't offer a public API for third-party apps to plug into, and a backend-free app has no way to custody or convert currency responsibly anyway. Instead, Sydacalist supports two non-custodial ways to tip a creator, both staying true to "no central server":
+
+1. **Plain pay links (casual, zero integration).** Add a Cash App/Venmo/PayPal.me/anything link to your profile (see above). A viewer clicks it and pays you however they like — the app is not involved beyond displaying the link.
+2. **Tip stickers via NIP-57 "zaps" (real-time, verifiable, in-app).** In the 🎉 Stickers tab, build a local sticker library — emoji, pasted SVG markup, or uploaded images, each stored only in your browser — and optionally assign a sats price to any sticker to make it a tip sticker. During a Live P2P session (📡 Live P2P tab):
+   - The host shares their `npub`; a viewer enters it once in the "💸 Tip the host" card.
+   - Tapping a sticker sends it instantly over the WebRTC data channel (an animated "burst," TikTok-style) to the other peer, and — if it has a sats price — requests a Lightning invoice directly from the host's own Lightning address (`lud16`, set in their Profile) via the host's own wallet/LNURL provider.
+   - If the viewer has a WebLN-compatible wallet extension (e.g. Alby) installed, the invoice is paid automatically; otherwise the invoice is shown as text for payment from any Lightning wallet (phone app, QR, etc.).
+   - Once paid, the **zap receipt** — a public, verifiable payment-proof event — arrives over the same Nostr relays the app already uses, and shows up as a confirmed "⚡ X sats received" line, distinct from the (unconfirmed) sticker burst animation itself.
+
+No part of this flow runs through a server this app operates: the sticker art lives in your browser, the invoice comes from the host's own Lightning address, the payment moves wallet-to-wallet over the Lightning Network, and the only "database" involved is the same public, decentralized relay network already used for posts and DMs.
 
 ## Encryption
 
@@ -129,6 +148,9 @@ This is intentionally a first pass. Notable gaps, by design:
 - **Simple feed ranking** — within Global or Following mode, the feed is reverse-chronological; there's no client-side interest ranking, muting, or spam filtering yet.
 - **No mobile app** — this is a browser-only prototype.
 - **No moderation tooling** — beyond what relays themselves provide.
+- **Zaps require a Lightning wallet on both sides** — a host needs a Lightning address (`lud16`) and a viewer needs some Lightning wallet (a WebLN browser extension for one-click payment, or any phone wallet for manual payment). This is real friction compared to "everyone already has Cash App," accepted deliberately to avoid any backend/payment-processor dependency.
+- **Shared sticker packs during a live session aren't verified/moderated** — a host's pack is only as trustworthy as the host; there's no sticker marketplace, approval flow, or abuse reporting yet.
+- **Tip stickers vs. confirmed zaps are visually distinct but not auto-reconciled** — the sticker "burst" animation fires immediately on tap (so it feels responsive), while the ⚡ confirmed-sats line only appears once a zap receipt arrives; the UI doesn't yet automatically match a specific sticker tap to its corresponding receipt.
 
 ## Tech stack
 

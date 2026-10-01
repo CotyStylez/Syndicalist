@@ -103,4 +103,5 @@ export const KEYS = {
   PROFILE_CACHE: 'profile-cache', // cached kind-0 metadata for other pubkeys, keyed by hex
   PRIVATE_NOTES: 'private-notes-vault', // encrypted private notes
   DM_CONVERSATIONS: 'dm-conversations-vault', // encrypted NIP-17 direct message history, keyed by peer pubkey
+  STICKER_PACKS: 'sticker-packs', // locally-stored, user-customizable sticker/tip packs (not sensitive, stored unencrypted)
 };

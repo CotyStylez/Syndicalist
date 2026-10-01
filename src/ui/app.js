@@ -7,6 +7,7 @@ import { renderPeopleView } from './peopleView.js';
 import { renderNotesView } from './notesView.js';
 import { renderMessagesView } from './messagesView.js';
 import { renderWebrtcView } from './webrtcView.js';
+import { renderStickersView } from './stickersView.js';
 import { renderSettingsView } from './settingsView.js';
 
 const TABS = [
@@ -17,6 +18,7 @@ const TABS = [
   { id: 'messages', label: '💬 Messages' },
   { id: 'notes', label: '🔒 Private Notes' },
   { id: 'webrtc', label: '📡 Live P2P' },
+  { id: 'stickers', label: '🎉 Stickers' },
   { id: 'settings', label: '⚙️ Settings' },
 ];
 
@@ -115,6 +117,9 @@ export function mountApp(root, app) {
         break;
       case 'webrtc':
         renderWebrtcView(content, app);
+        break;
+      case 'stickers':
+        renderStickersView(content, app);
         break;
       case 'settings':
         renderSettingsView(content, app);

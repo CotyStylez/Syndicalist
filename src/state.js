@@ -12,6 +12,8 @@ import { sealAndStore, unseal, hasSealed, forget } from './lib/vault.js';
 import { getItem, setItem, clearAll, KEYS } from './lib/storage.js';
 import { RelayHub, DEFAULT_RELAYS, pubkeyFromInput } from './lib/relays.js';
 import { wrapDirectMessage, unwrapDirectMessage } from './lib/dm.js';
+import { loadPacks, savePacks as persistPacks } from './lib/stickers.js';
+import { requestZapInvoice, tryPayWithWebLn, parseZapReceipt } from './lib/zap.js';
 
 const DEFAULT_PROFILE = {
   displayName: '',
@@ -25,6 +27,16 @@ const DEFAULT_PROFILE = {
     { title: 'Now Playing', content: 'Add a song, mood, or status.' },
     { title: 'Top Friends', content: 'Feature people you follow here.' },
   ],
+  // Optional NIP-57 Lightning address ("lud16"), e.g. "name@getalby.com".
+  // Published as a top-level `lud16` field in kind-0 metadata so any Nostr
+  // client (and this app's tip-sticker flow) can zap this pubkey directly —
+  // no account with this app, no platform cut, no data this app custodies.
+  lightningAddress: '',
+  // Plain external "pay me however you like" links (Cash App, Venmo,
+  // PayPal.me, etc). These are just clickable links the app displays —
+  // no API integration, no payment confirmation, no money ever touches
+  // this app.
+  payLinks: [],
 };
 
 const DEFAULT_PREFS = {
@@ -61,6 +73,9 @@ export function createAppState() {
     privateNotes: [], // decrypted only in memory while unlocked
     dmConversations: {}, // peerPubkeyHex -> [{ id, direction, content, createdAt }], decrypted only while unlocked
     dmSubscriptionActive: false,
+    stickerPacks: [], // locally-stored, user-customizable sticker/tip packs (public, unencrypted)
+    zapReceipts: [], // recent parsed zap receipts for the current identity, newest first (in-memory only)
+    zapSubscriptionActive: false,
     relayHub: null,
     error: null,
   };
@@ -89,7 +104,7 @@ export function createAppState() {
   }
 
   async function loadPersisted() {
-    const [profile, relays, prefs, draft, vaultExists, follows, profileCache] = await Promise.all([
+    const [profile, relays, prefs, draft, vaultExists, follows, profileCache, stickerPacks] = await Promise.all([
       getItem(KEYS.PROFILE),
       getItem(KEYS.RELAYS),
       getItem(KEYS.PREFS),
@@ -97,6 +112,7 @@ export function createAppState() {
       hasSealed(KEYS.IDENTITY_VAULT),
       getItem(KEYS.FOLLOWS),
       getItem(KEYS.PROFILE_CACHE),
+      loadPacks(),
     ]);
     if (profile) state.profile = { ...DEFAULT_PROFILE, ...profile };
     if (relays && relays.length) state.relays = relays;
@@ -104,6 +120,7 @@ export function createAppState() {
     if (typeof draft === 'string') state.draft = draft;
     if (Array.isArray(follows)) state.follows = follows;
     if (profileCache) state.profileCache = profileCache;
+    state.stickerPacks = stickerPacks;
     state.vaultExists = vaultExists;
     state.ready = true;
     notify();
@@ -133,6 +150,7 @@ export function createAppState() {
       },
     });
     if (state.identity) startDmSubscription();
+    if (state.identity) startZapSubscription();
     notify();
     return hub;
   }
@@ -304,6 +322,25 @@ export function createAppState() {
     return tag ? tag[1] : null;
   }
 
+  /** Subscribes to public NIP-57 zap receipts (kind 9735) addressed to the
+   * current identity — i.e. tips this user has received. Receipts are
+   * public proof-of-payment events, not encrypted content, so they're kept
+   * in memory only (not sealed to the vault) and simply reset on lock. */
+  function startZapSubscription() {
+    if (!state.identity || !state.relayHub) return;
+    state.relayHub.subscribeZapReceipts({
+      pubkeyHex: state.identity.publicKeyHex,
+      onEvent: (event) => {
+        const receipt = parseZapReceipt(event);
+        if (!receipt) return;
+        if (state.zapReceipts.some((r) => r.id === receipt.id)) return;
+        state.zapReceipts = [receipt, ...state.zapReceipts].slice(0, 200);
+        notifyFeed();
+      },
+    });
+    state.zapSubscriptionActive = true;
+  }
+
   async function generateNewIdentity(passphrase) {
     const identity = generateIdentity();
     await sealAndStore(KEYS.IDENTITY_VAULT, identity, passphrase);
@@ -311,6 +348,7 @@ export function createAppState() {
     state.vaultExists = true;
     state.sessionPassphrase = passphrase;
     if (state.relayHub) startDmSubscription();
+    if (state.relayHub) startZapSubscription();
     notify();
     return identity;
   }
@@ -322,6 +360,7 @@ export function createAppState() {
     state.vaultExists = true;
     state.sessionPassphrase = passphrase;
     if (state.relayHub) startDmSubscription();
+    if (state.relayHub) startZapSubscription();
     notify();
     return identity;
   }
@@ -336,19 +375,24 @@ export function createAppState() {
     const conversations = await unseal(KEYS.DM_CONVERSATIONS, passphrase).catch(() => ({}));
     state.dmConversations = conversations || {};
     if (state.relayHub) startDmSubscription();
+    if (state.relayHub) startZapSubscription();
     notify();
     return identity;
   }
 
   function lockIdentity() {
     state.relayHub?.closeDirectMessages();
+    state.relayHub?.closeZapReceipts();
     state.dmSubscriptionActive = false;
+    state.zapSubscriptionActive = false;
     state.identity = null;
     state.sessionPassphrase = null;
     state.privateNotes = [];
     state.dmConversations = {};
+    state.zapReceipts = [];
     notify();
   }
+
 
   async function saveProfile(partialProfile) {
     state.profile = { ...state.profile, ...partialProfile };
@@ -403,6 +447,9 @@ export function createAppState() {
     state.privateNotes = [];
     state.dmConversations = {};
     state.dmSubscriptionActive = false;
+    state.stickerPacks = [];
+    state.zapReceipts = [];
+    state.zapSubscriptionActive = false;
     notify();
   }
 
@@ -411,13 +458,56 @@ export function createAppState() {
     await forget(KEYS.PRIVATE_NOTES);
     await forget(KEYS.DM_CONVERSATIONS);
     state.relayHub?.closeDirectMessages();
+    state.relayHub?.closeZapReceipts();
     state.identity = null;
     state.sessionPassphrase = null;
     state.vaultExists = false;
     state.privateNotes = [];
     state.dmConversations = {};
     state.dmSubscriptionActive = false;
+    state.zapReceipts = [];
+    state.zapSubscriptionActive = false;
     notify();
+  }
+
+  /** Persists an updated sticker-pack list. Stickers are cosmetic/public
+   * data (emoji, SVG markup, or a locally-stored image), never sensitive,
+   * so — unlike profile/notes/DMs — they're stored unencrypted, same as
+   * relay lists or UI prefs. */
+  async function saveStickerPacks(packs) {
+    state.stickerPacks = packs;
+    await persistPacks(packs);
+    notify();
+  }
+
+  /**
+   * Requests a Lightning invoice (NIP-57 zap) for tipping a host during a
+   * live session, tries to auto-pay it via a WebLN browser extension if one
+   * is present, and returns `{ invoice, paid }` so the UI can fall back to
+   * showing a copy/QR box for manual payment when `paid` is false. This app
+   * never custodies the sats — it only requests an invoice and, if a
+   * receipt later arrives over relays, recognizes it (see
+   * startZapSubscription).
+   */
+  async function sendZapTip({ hostPubkeyHex, amountSats, comment }) {
+    if (!state.identity) throw new Error('Unlock your identity first.');
+    if (!state.relayHub) throw new Error('Connect to relays first.');
+    const profileEvent = (await ensureProfileCached(hostPubkeyHex))?._event;
+    const { invoice, zapRequestEvent } = await requestZapInvoice({
+      profileEvent,
+      recipientPubkeyHex: hostPubkeyHex,
+      amountSats,
+      comment,
+      relays: state.relays,
+      senderSecretKeyHex: state.identity.secretKeyHex,
+    });
+    let paid = false;
+    try {
+      paid = await tryPayWithWebLn(invoice);
+    } catch {
+      paid = false; // user's wallet rejected/cancelled — fall back to manual payment
+    }
+    return { invoice, paid, zapRequestEvent };
   }
 
   return {
@@ -444,6 +534,9 @@ export function createAppState() {
     deletePrivateNote,
     sendDirectMessage,
     startDmSubscription,
+    startZapSubscription,
+    saveStickerPacks,
+    sendZapTip,
     panicWipe,
     forgetIdentityOnly,
   };
