@@ -17,6 +17,7 @@ Sydacalist is a single-page, browser-only app (no backend server) that lets you:
 - Try a **peer-to-peer WebRTC demo** (data-channel chat + optional camera preview) with no signaling server required — exchange the connection setup via manual copy/paste, or deliver it as an encrypted direct message.
 - Send **TikTok-style stickers** during a Live P2P session from a fully local, customizable **sticker library** (🎉 Stickers tab), and tip a host in real Bitcoin Lightning sats via **NIP-57 "zaps"** — no platform cut, no payment processor, no backend.
 - Add plain external **"pay me however you like" links** (Cash App, Venmo, PayPal.me, anything) to your profile, for casual tipping outside the app entirely.
+- Pick a **live session format** — Debate panel, Interview, Solo broadcast, Round-table — with labeled role slots, a topic banner, and a countdown timer, customizable and saved locally.
 
 ## How to run it
 
@@ -137,6 +138,19 @@ The "Live P2P" tab demonstrates a direct browser-to-browser connection:
 
 This uses only a public STUN server for NAT traversal and requires no custom signaling or media server. Signaling itself (the offer/answer exchange) can now ride the same encrypted, decentralized DM transport as the Messages tab instead of requiring manual copy/paste — though copy/paste remains available and is the most reliable fallback. (Note: some networks — especially symmetric NATs or heavily firewalled corporate/CI networks — will prevent a direct connection from establishing even once signaling succeeds; a future version could add a TURN relay option.)
 
+## Live session templates
+
+The 📡 Live P2P tab includes a **"🎭 Session format"** picker with local, customizable presets for common live formats:
+
+- **🗣️ Debate panel** — labeled "Pro"/"Con" slots, an optional topic banner, and a countdown timer (e.g. for timed rebuttals).
+- **🎙️ 1:1 interview** — "Host"/"Guest" labels.
+- **📡 Solo broadcast** — a single "You" label, no extra chrome.
+- **🎧 Round-table / podcast** — multiple speaker labels plus a topic banner.
+
+Pick a format from the dropdown, and its role labels, accent color, topic banner, and timer appear above the video/chat area. Click **"Duplicate & customize"** on any template to rename it, relabel its roles (comma-separated, so you can add a "Moderator" slot, etc.), and pick a new accent color — your copy is saved locally (IndexedDB) and persists across sessions, same as sticker packs.
+
+**Important honesty note:** templates are a cosmetic/structural layer only. They relabel and restyle the *same* 1:1 WebRTC connection described above — picking "Debate panel" does not add a media server, an SFU, or automatic multi-peer discovery. A true multi-person panel (3+ live video feeds) would require manually establishing a separate peer connection per additional participant, which isn't built yet; see Known limitations below.
+
 ## Known limitations & future work
 
 This is intentionally a first pass. Notable gaps, by design:
@@ -151,6 +165,7 @@ This is intentionally a first pass. Notable gaps, by design:
 - **Zaps require a Lightning wallet on both sides** — a host needs a Lightning address (`lud16`) and a viewer needs some Lightning wallet (a WebLN browser extension for one-click payment, or any phone wallet for manual payment). This is real friction compared to "everyone already has Cash App," accepted deliberately to avoid any backend/payment-processor dependency.
 - **Shared sticker packs during a live session aren't verified/moderated** — a host's pack is only as trustworthy as the host; there's no sticker marketplace, approval flow, or abuse reporting yet.
 - **Tip stickers vs. confirmed zaps are visually distinct but not auto-reconciled** — the sticker "burst" animation fires immediately on tap (so it feels responsive), while the ⚡ confirmed-sats line only appears once a zap receipt arrives; the UI doesn't yet automatically match a specific sticker tap to its corresponding receipt.
+- **Live session templates don't support real multi-party video** — a "Debate panel" template shows labeled slots for each role, but the underlying transport is still the existing 1:1 WebRTC connection; a true 3+ person panel would need multiple manually-established peer connections (not yet built), and the countdown timer is purely local/client-side (not synced between peers).
 
 ## Tech stack
 

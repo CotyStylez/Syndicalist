@@ -13,6 +13,7 @@ import { getItem, setItem, clearAll, KEYS } from './lib/storage.js';
 import { RelayHub, DEFAULT_RELAYS, pubkeyFromInput } from './lib/relays.js';
 import { wrapDirectMessage, unwrapDirectMessage } from './lib/dm.js';
 import { loadPacks, savePacks as persistPacks } from './lib/stickers.js';
+import { loadTemplates, saveTemplates as persistTemplates } from './lib/templates.js';
 import { requestZapInvoice, tryPayWithWebLn, parseZapReceipt } from './lib/zap.js';
 
 const DEFAULT_PROFILE = {
@@ -74,6 +75,7 @@ export function createAppState() {
     dmConversations: {}, // peerPubkeyHex -> [{ id, direction, content, createdAt }], decrypted only while unlocked
     dmSubscriptionActive: false,
     stickerPacks: [], // locally-stored, user-customizable sticker/tip packs (public, unencrypted)
+    liveTemplates: [], // locally-stored, user-customizable Live P2P session format presets (public, unencrypted)
     zapReceipts: [], // recent parsed zap receipts for the current identity, newest first (in-memory only)
     zapSubscriptionActive: false,
     relayHub: null,
@@ -104,7 +106,7 @@ export function createAppState() {
   }
 
   async function loadPersisted() {
-    const [profile, relays, prefs, draft, vaultExists, follows, profileCache, stickerPacks] = await Promise.all([
+    const [profile, relays, prefs, draft, vaultExists, follows, profileCache, stickerPacks, liveTemplates] = await Promise.all([
       getItem(KEYS.PROFILE),
       getItem(KEYS.RELAYS),
       getItem(KEYS.PREFS),
@@ -113,6 +115,7 @@ export function createAppState() {
       getItem(KEYS.FOLLOWS),
       getItem(KEYS.PROFILE_CACHE),
       loadPacks(),
+      loadTemplates(),
     ]);
     if (profile) state.profile = { ...DEFAULT_PROFILE, ...profile };
     if (relays && relays.length) state.relays = relays;
@@ -121,6 +124,7 @@ export function createAppState() {
     if (Array.isArray(follows)) state.follows = follows;
     if (profileCache) state.profileCache = profileCache;
     state.stickerPacks = stickerPacks;
+    state.liveTemplates = liveTemplates;
     state.vaultExists = vaultExists;
     state.ready = true;
     notify();
@@ -450,6 +454,7 @@ export function createAppState() {
     state.stickerPacks = [];
     state.zapReceipts = [];
     state.zapSubscriptionActive = false;
+    state.liveTemplates = [];
     notify();
   }
 
@@ -477,6 +482,15 @@ export function createAppState() {
   async function saveStickerPacks(packs) {
     state.stickerPacks = packs;
     await persistPacks(packs);
+    notify();
+  }
+
+  /** Persists an updated live-template list (debate panel, interview, etc.).
+   * Like sticker packs, templates are purely cosmetic/structural local
+   * presets — never sensitive — so they're stored unencrypted. */
+  async function saveLiveTemplates(templates) {
+    state.liveTemplates = templates;
+    await persistTemplates(templates);
     notify();
   }
 
@@ -536,6 +550,7 @@ export function createAppState() {
     startDmSubscription,
     startZapSubscription,
     saveStickerPacks,
+    saveLiveTemplates,
     sendZapTip,
     panicWipe,
     forgetIdentityOnly,

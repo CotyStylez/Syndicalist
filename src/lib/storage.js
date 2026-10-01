@@ -104,4 +104,5 @@ export const KEYS = {
   PRIVATE_NOTES: 'private-notes-vault', // encrypted private notes
   DM_CONVERSATIONS: 'dm-conversations-vault', // encrypted NIP-17 direct message history, keyed by peer pubkey
   STICKER_PACKS: 'sticker-packs', // locally-stored, user-customizable sticker/tip packs (not sensitive, stored unencrypted)
+  LIVE_TEMPLATES: 'live-templates', // locally-stored, user-customizable Live P2P session format presets (debate panel, interview, etc.)
 };

@@ -1,6 +1,7 @@
 import { h, mount } from '../utils/dom.js';
 import { PeerSession, encodeSignalMessage } from '../lib/webrtc.js';
 import { pubkeyFromInput } from '../lib/relays.js';
+import { duplicateTemplate, updateTemplate } from '../lib/templates.js';
 
 // This view manages a live WebRTC peer connection. Its state (the peer
 // connection, local media stream, signaling text) is kept at module scope
@@ -26,6 +27,10 @@ let tipStatus = null;
 let pendingInvoice = null; // { invoice, sats, label, paid }
 let stickerBursts = []; // transient { id, art } entries, auto-removed after the CSS animation
 let zapListenerBound = null; // the `app` instance we've already subscribed, to avoid double-subscribing
+let activeTemplateId = null;
+let timerRemaining = null; // seconds left, or null when no timer is running
+let timerHandle = null;
+let editingTemplateId = null; // template currently open in the inline customize form
 
 const STICKER_MSG_PREFIX = 'sydacalist-sticker:v1:';
 
@@ -118,6 +123,144 @@ function renderStickerArt(sticker) {
   if (sticker.kind === 'emoji') return h('span', {}, sticker.data);
   if (sticker.kind === 'svg') return h('span', { html: sticker.data });
   return h('img', { src: sticker.data, alt: sticker.label });
+}
+
+/** Renders the "Session format" picker: a dropdown of local templates
+ * (built-in + any the host has duplicated/customized), the labeled-slot
+ * layout preview, an optional topic banner, and an optional countdown
+ * timer. This is purely a cosmetic/structural layer on top of the existing
+ * 1:1 WebRTC transport above — picking "Debate panel" does not add a media
+ * server or auto-discover more than one peer; it only relabels and
+ * restyles this same two-video view (see README's Live templates section
+ * for the honest limitation on true multi-party panels). */
+function renderTemplateSection(content, app) {
+  const templates = app.state.liveTemplates || [];
+  if (!activeTemplateId && templates.length) activeTemplateId = templates[0].id;
+  const template = templates.find((t) => t.id === activeTemplateId) || templates[0] || null;
+  if (!template) return null;
+
+  const isEditing = editingTemplateId === template.id;
+
+  const slotRow = h(
+    'div',
+    { class: 'template-slots', style: `border-color: ${template.accentColor}` },
+    (template.roles || []).map((roleLabel) => h('span', { class: 'template-slot', style: `background:${template.accentColor}` }, roleLabel)),
+  );
+
+  const topicBanner = template.showTopicBanner
+    ? h('input', {
+        type: 'text',
+        placeholder: 'Topic / headline for this session (e.g. "Resolved: …")',
+        value: template.topic || '',
+        onInput: async (e) => {
+          const updated = updateTemplate(templates, template.id, { topic: e.target.value });
+          await app.saveLiveTemplates(updated);
+          draw(content, app);
+        },
+      })
+    : null;
+
+  const timerRow = template.timerMinutes
+    ? h('div', { class: 'button-row' }, [
+        h('span', { class: 'muted small' }, timerRemaining != null ? `⏱ ${Math.max(0, Math.ceil(timerRemaining / 60))}m ${timerRemaining % 60}s left` : `⏱ ${template.timerMinutes}m timer`),
+        h('button', { onClick: () => startTimer(content, app, template.timerMinutes) }, 'Start'),
+        h('button', { onClick: () => stopTimer(content, app) }, 'Reset'),
+      ])
+    : null;
+
+  const editForm = isEditing
+    ? h('div', { class: 'button-row' }, [
+        h('input', {
+          type: 'text',
+          placeholder: 'Template name',
+          value: template.name,
+          onInput: async (e) => {
+            const updated = updateTemplate(templates, template.id, { name: e.target.value });
+            await app.saveLiveTemplates(updated);
+            draw(content, app);
+          },
+        }),
+        h('input', {
+          type: 'text',
+          placeholder: 'Roles, comma-separated (e.g. Pro, Con, Moderator)',
+          value: (template.roles || []).join(', '),
+          onInput: async (e) => {
+            const roles = e.target.value.split(',').map((r) => r.trim()).filter(Boolean);
+            const updated = updateTemplate(templates, template.id, { roles });
+            await app.saveLiveTemplates(updated);
+            draw(content, app);
+          },
+        }),
+        h('input', {
+          type: 'color',
+          value: template.accentColor,
+          onInput: async (e) => {
+            const updated = updateTemplate(templates, template.id, { accentColor: e.target.value });
+            await app.saveLiveTemplates(updated);
+            draw(content, app);
+          },
+        }),
+        h('button', { onClick: () => { editingTemplateId = null; draw(content, app); } }, 'Done'),
+      ])
+    : null;
+
+  return h('section', { class: 'card' }, [
+    h('h3', {}, '🎭 Session format'),
+    h('p', { class: 'muted small' }, 'Pick a layout preset — purely cosmetic labels/colors on top of the same 1:1 connection above. "Panel" formats with more than two roles still need the extra participants connected manually; there is no auto-discovery or media server.'),
+    h('div', { class: 'button-row' }, [
+      h(
+        'select',
+        {
+          onChange: (e) => {
+            activeTemplateId = e.target.value;
+            editingTemplateId = null;
+            stopTimer(content, app);
+            draw(content, app);
+          },
+        },
+        templates.map((t) => h('option', { value: t.id, selected: t.id === template.id ? '' : undefined }, t.name + (t.builtIn ? '' : ' ✎'))),
+      ),
+      h(
+        'button',
+        {
+          onClick: async () => {
+            const copy = duplicateTemplate(template);
+            const updated = [...templates, copy];
+            await app.saveLiveTemplates(updated);
+            activeTemplateId = copy.id;
+            editingTemplateId = copy.id;
+            draw(content, app);
+          },
+        },
+        'Duplicate & customize',
+      ),
+      !template.builtIn
+        ? h('button', { onClick: () => { editingTemplateId = isEditing ? null : template.id; draw(content, app); } }, isEditing ? 'Close editor' : '✎ Edit')
+        : null,
+    ]),
+    slotRow,
+    topicBanner,
+    timerRow,
+    editForm,
+  ]);
+}
+
+function startTimer(content, app, minutes) {
+  stopTimer(content, app);
+  timerRemaining = minutes * 60;
+  timerHandle = setInterval(() => {
+    timerRemaining = Math.max(0, timerRemaining - 1);
+    if (timerRemaining === 0) stopTimer(content, app, true);
+    draw(content, app);
+  }, 1000);
+  draw(content, app);
+}
+
+function stopTimer(content, app, keepZero) {
+  if (timerHandle) clearInterval(timerHandle);
+  timerHandle = null;
+  if (!keepZero) timerRemaining = null;
+  draw(content, app);
 }
 
 function draw(content, app) {
@@ -347,7 +490,9 @@ function draw(content, app) {
     ]),
   ]);
 
-  mount(content, intro, roleChooser, videoRow, role ? signalingSection : null, tipCard, chatSection);
+  const templateSection = renderTemplateSection(content, app);
+
+  mount(content, intro, templateSection, roleChooser, videoRow, role ? signalingSection : null, tipCard, chatSection);
 
   const localVideo = content.querySelector('#local-video');
   if (localVideo && localStream) localVideo.srcObject = localStream;
