@@ -124,6 +124,11 @@ select {
   margin-bottom: 0.5rem;
 }
 
+.code-input {
+  font-family: 'Courier New', monospace;
+  font-size: 0.85rem;
+}
+
 input[type='color'] {
   height: 2.5rem;
   padding: 0.2rem;
@@ -354,57 +359,10 @@ button.link-btn {
   margin-bottom: 0.6rem;
 }
 
-.profile-preview {
-  --theme: #ff2d75;
-  --accent: #1a1a2e;
-  background: var(--accent);
-  border-radius: 16px;
-  overflow: hidden;
-  border: 2px solid var(--theme);
-  height: fit-content;
-}
-
-.preview-banner {
-  background: linear-gradient(120deg, var(--theme), #000);
-  font-size: 3rem;
-  text-align: center;
-  padding: 1.5rem 0;
-}
-
-.preview-header {
-  display: flex;
-  gap: 1rem;
-  align-items: center;
-  padding: 1rem;
-}
-
-.preview-avatar {
-  font-size: 2.5rem;
-  background: var(--theme);
-  border-radius: 50%;
-  width: 4rem;
-  height: 4rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.preview-widgets {
-  padding: 0 1rem 1rem;
-  display: grid;
-  gap: 0.75rem;
-}
-
-.layout-grid .preview-widgets {
-  grid-template-columns: 1fr 1fr;
-}
-
-.preview-widget {
-  background: rgba(255, 255, 255, 0.06);
-  border-radius: 10px;
-  padding: 0.75rem;
-}
+/* .profile-preview and related rules used to live here, but the preview is
+   now rendered inside an isolated Shadow DOM root (see profileView.js) so
+   user-provided custom CSS can't leak into the rest of the app — the base
+   styles are duplicated as a template string in that file instead. */
 
 .notes-list .note-card {
   background: var(--surface);
@@ -467,28 +425,6 @@ button.link-btn {
 .chat-zap-line {
   color: var(--yellow);
   font-weight: 600;
-}
-
-.preview-pay-links {
-  padding: 0 1rem 1rem;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
-
-.pay-link-btn {
-  display: inline-block;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid #33335c;
-  border-radius: 999px;
-  padding: 0.35rem 0.85rem;
-  font-size: 0.85rem;
-  color: var(--text);
-  text-decoration: none;
-}
-
-.pay-link-btn:hover {
-  border-color: var(--pink);
 }
 
 .sticker-tray {

@@ -24,9 +24,24 @@ const DEFAULT_PROFILE = {
   bannerEmoji: '🌇',
   avatarEmoji: '🛰️',
   layout: 'classic',
+  // Curated, safe font choices (no remote font loading / @font-face
+  // injection in this first pass — see README future work).
+  fontFamily: 'system',
+  // A locally-uploaded background image (data URL). Deliberately
+  // LOCAL-ONLY — never included in published Nostr metadata — both to
+  // avoid bloating relay events with large base64 blobs and because an
+  // image is harder to eyeball-review than a color before broadcasting it.
+  backgroundImage: '',
+  // Freeform CSS the user can write to fully re-skin their own profile
+  // preview, MySpace-style. Deliberately LOCAL-ONLY (never published): it's
+  // rendered inside an isolated Shadow DOM root scoped to the preview card
+  // only, so it can never leak out and restyle the rest of the app, and —
+  // since it's never broadcast to Nostr — it can never affect anyone else's
+  // browser either. See README's "Full custom decoration" section.
+  customCss: '',
   widgets: [
-    { title: 'Now Playing', content: 'Add a song, mood, or status.' },
-    { title: 'Top Friends', content: 'Feature people you follow here.' },
+    { title: 'Now Playing', content: 'Add a song, mood, or status.', type: 'text' },
+    { title: 'Top Friends', content: 'Feature people you follow here.', type: 'text' },
   ],
   // Optional NIP-57 Lightning address ("lud16"), e.g. "name@getalby.com".
   // Published as a top-level `lud16` field in kind-0 metadata so any Nostr
@@ -39,6 +54,17 @@ const DEFAULT_PROFILE = {
   // this app.
   payLinks: [],
 };
+
+/** Curated, safe font stacks for the profile preview — a plain keyword, so
+ * (unlike customCss/backgroundImage) this is fine to include if the user
+ * chooses to publish their profile; it can't be used to inject anything. */
+export const PROFILE_FONT_OPTIONS = [
+  { id: 'system', label: 'System default', stack: 'inherit' },
+  { id: 'serif', label: 'Serif', stack: 'Georgia, "Times New Roman", serif' },
+  { id: 'mono', label: 'Monospace / hacker', stack: '"Courier New", monospace' },
+  { id: 'rounded', label: 'Rounded / playful', stack: '"Comic Sans MS", "Comic Sans", cursive' },
+  { id: 'display', label: 'Bold display', stack: 'Impact, "Arial Black", sans-serif' },
+];
 
 const DEFAULT_PREFS = {
   feedMode: 'global',

@@ -106,7 +106,19 @@ All app state — identity vault, profile, relay list, drafts, preferences, foll
 
 ## Customizable profile
 
-The Profile tab is the MySpace-inspired centerpiece: pick a theme color, accent/background color, layout (classic/grid/minimal), banner and avatar emoji placeholders, and freeform widgets (e.g. "Now Playing", "Top Friends"). Changes are saved locally by default; "Save & publish to Nostr" additionally broadcasts your display name, bio, styling, and Lightning address (if set) as public Nostr profile metadata (kind 0). You can also add any number of plain **external pay links** (Cash App `$cashtag`, Venmo handle, PayPal.me, etc.) — these are just clickable buttons; the app never integrates with those services' APIs, never sees whether they were paid, and never touches that money.
+The Profile tab is the MySpace-inspired centerpiece: pick a theme color, accent/background color, layout (classic/grid/minimal), a font, banner and avatar emoji placeholders, and freeform widgets (text or link-style, e.g. "Now Playing", "Top Friends"). Changes are saved locally by default; "Save & publish to Nostr" additionally broadcasts your display name, bio, styling, font, widgets, and Lightning address (if set) as public Nostr profile metadata (kind 0). You can also add any number of plain **external pay links** (Cash App `$cashtag`, Venmo handle, PayPal.me, etc.) — these are just clickable buttons; the app never integrates with those services' APIs, never sees whether they were paid, and never touches that money.
+
+### Full custom decoration (MySpace-style, local-only)
+
+For anyone who wants to go further than preset colors and layouts, the Profile tab also has a **background image upload** and a **freeform custom CSS** box, so you can fully re-skin your preview — glitter, chaos, whatever you want, entirely at your discretion.
+
+These two fields are deliberately **local-only and never published**, unlike the rest of the profile:
+
+- They're excluded from the Nostr metadata event when you click "Save & publish" — so a giant background image can never bloat a relay, and raw CSS from your browser can never be downloaded and rendered (unsafely) by someone else's client.
+- The live preview renders inside an isolated **Shadow DOM** root, so your custom CSS can only ever restyle that one preview card — it's structurally incapable of leaking out and affecting the rest of the app's UI, no matter what selectors you write (`*`, `body`, `html`, anything).
+- Both are stored in this browser's IndexedDB like everything else local-first, and persist across reloads; they're wiped the same way as the rest of your local data (see Known limitations/Settings).
+
+This keeps the door open for genuinely unlimited self-expression — the same spirit as a classic MySpace page with a custom layout/CSS skin — without ever turning your browser into a vector for injecting content into anyone else's.
 
 ## Tipping & stickers (no platform cut, no data center)
 
@@ -166,6 +178,7 @@ This is intentionally a first pass. Notable gaps, by design:
 - **Shared sticker packs during a live session aren't verified/moderated** — a host's pack is only as trustworthy as the host; there's no sticker marketplace, approval flow, or abuse reporting yet.
 - **Tip stickers vs. confirmed zaps are visually distinct but not auto-reconciled** — the sticker "burst" animation fires immediately on tap (so it feels responsive), while the ⚡ confirmed-sats line only appears once a zap receipt arrives; the UI doesn't yet automatically match a specific sticker tap to its corresponding receipt.
 - **Live session templates don't support real multi-party video** — a "Debate panel" template shows labeled slots for each role, but the underlying transport is still the existing 1:1 WebRTC connection; a true 3+ person panel would need multiple manually-established peer connections (not yet built), and the countdown timer is purely local/client-side (not synced between peers).
+- **No remote/custom font loading or arbitrary HTML widgets yet** — the font picker is a curated safe list (no `@font-face`/remote font URLs), and widgets support plain text or a single link, not arbitrary HTML — both deliberately conservative starting points that could be relaxed later with more sanitization work.
 
 ## Tech stack
 
