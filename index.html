@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#171b17">
+    <meta name="description" content="A small, community-oriented publishing network prototype.">
+    <title>Static — a publishing network</title>
+    <link rel="stylesheet" href="./styles.css">
+    <script type="module" src="./src/app.js"></script>
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="wordmark" href="/" aria-label="Static home">static<span>·</span></a>
+      <p class="header-note">Publishing belongs to the people who do it.</p>
+      <button id="identity-button" class="button button-outline" type="button">Connect signer</button>
+    </header>
+
+    <main>
+      <section class="intro" aria-labelledby="intro-title">
+        <p class="eyebrow">A community-owned publishing prototype</p>
+        <h1 id="intro-title">Your words.<br><em>Your network.</em></h1>
+        <p class="intro-copy">Publish openly across independent relays. Choose where your feed comes from, take your settings with you, and decide what you want to see.</p>
+        <p class="privacy-note"><strong>Know what public means:</strong> posts on this prototype are public and relay operators may see your content, account, connection metadata, and posting times. This is not an anonymous or secure-source channel.</p>
+      </section>
+
+      <section class="composer panel" aria-labelledby="compose-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Public publishing</p>
+            <h2 id="compose-title">Write something</h2>
+          </div>
+          <span id="identity-label" class="identity-label">No signer connected</span>
+        </div>
+        <form id="post-form">
+          <label class="visually-hidden" for="post-content">Your public post</label>
+          <textarea id="post-content" maxlength="2000" rows="5" placeholder="What should your community know?" required></textarea>
+          <div class="composer-footer">
+            <span id="character-count">0 / 2000</span>
+            <button class="button" type="submit">Publish to selected relays</button>
+          </div>
+        </form>
+        <p id="publish-status" class="status" role="status" aria-live="polite"></p>
+      </section>
+
+      <section class="workspace" aria-label="Publishing network">
+        <section class="feed-section" aria-labelledby="feed-title">
+          <div class="section-heading feed-heading">
+            <div>
+              <p class="eyebrow">Your chosen sources · newest first</p>
+              <h2 id="feed-title">Public feed</h2>
+            </div>
+            <button id="refresh-button" class="button button-outline" type="button">Refresh</button>
+          </div>
+          <p id="feed-status" class="status" role="status" aria-live="polite">Connect to your selected relays to load public posts.</p>
+          <ol id="feed" class="feed" aria-live="polite"></ol>
+        </section>
+
+        <aside class="settings panel" aria-labelledby="settings-title">
+          <p class="eyebrow">Local controls</p>
+          <h2 id="settings-title">Make it yours</h2>
+          <form id="settings-form">
+            <label for="relay-list">Relays <span>(one secure wss:// address per line)</span></label>
+            <textarea id="relay-list" rows="5" spellcheck="false"></textarea>
+            <label for="muted-words">Muted words <span>(one per line; filtered on this device)</span></label>
+            <textarea id="muted-words" rows="3" placeholder="Add words to hide"></textarea>
+            <label for="blocked-authors">Blocked authors <span>(64-character public keys)</span></label>
+            <textarea id="blocked-authors" rows="3" placeholder="Add public keys to hide"></textarea>
+            <button class="button button-outline full-width" type="submit">Save local settings</button>
+          </form>
+          <div class="data-controls">
+            <button id="export-button" class="text-button" type="button">Export settings</button>
+            <label class="text-button import-label" for="import-file">Import settings</label>
+            <input id="import-file" class="visually-hidden" type="file" accept="application/json,.json">
+          </div>
+          <p id="settings-status" class="status" role="status" aria-live="polite"></p>
+          <p class="settings-note">Settings stay in this browser unless you export them. Private keys are never requested or exported. Feed filtering is personal and does not moderate a relay.</p>
+        </aside>
+      </section>
+
+      <section class="principles panel" aria-labelledby="principles-title">
+        <p class="eyebrow">Built to be questioned</p>
+        <h2 id="principles-title">No single center. No magic promises.</h2>
+        <div class="principle-grid">
+          <article><h3>Portable by design</h3><p>Public posts use the open Nostr event format and can be read by compatible clients. Your signer—not this website—holds your keys.</p></article>
+          <article><h3>Choice over ranking</h3><p>This prototype shows a reverse-chronological relay feed. You choose relay sources and local filters; no engagement-ranking algorithm is applied.</p></article>
+          <article><h3>Still a prototype</h3><p>Relays can go offline or censor content. Peer-to-peer replication and ActivityPub/Mastodon federation are not implemented. Availability still depends on people and infrastructure.</p></article>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <span>Static is an experiment in collective publishing.</span>
+      <span>Public posts are public. Build trust locally.</span>
+    </footer>
+  </body>
+</html>
