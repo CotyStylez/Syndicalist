@@ -1,0 +1,16 @@
+{
+  "name": "syndicalist",
+  "version": "1.0.0",
+  "description": "Decentralized, privacy-first social platform prototype using Nostr and WebRTC",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "http://localhost:26831/CotyStylez/Syndicalist"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}
