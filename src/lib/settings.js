@@ -46,12 +46,15 @@ export function normalizeSettings(input) {
     throw new Error("Every relay must be a valid wss:// URL without credentials.");
   }
 
+  const blockedAuthors = normalizeLines(input.blockedAuthors, MAX_FILTER_ENTRIES, "Blocked authors");
+  if (blockedAuthors.some((key) => !/^[0-9a-f]{64}$/i.test(key))) {
+    throw new Error("Each blocked author must be a 64-character hexadecimal public key.");
+  }
+
   return {
     relays,
     mutedWords: normalizeLines(input.mutedWords, MAX_FILTER_ENTRIES, "Muted words"),
-    blockedAuthors: normalizeLines(input.blockedAuthors, MAX_FILTER_ENTRIES, "Blocked authors")
-      .filter((key) => /^[0-9a-f]{64}$/i.test(key))
-      .map((key) => key.toLowerCase()),
+    blockedAuthors: blockedAuthors.map((key) => key.toLowerCase()),
   };
 }
 

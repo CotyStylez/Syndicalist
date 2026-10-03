@@ -24,11 +24,15 @@ test("normalizes relay settings, muted words, and public keys", () => {
   const normalized = normalizeSettings({
     relays: ["wss://relay.example", "wss://relay.example/"],
     mutedWords: "Spoiler\nspoiler\n",
-    blockedAuthors: `${"A".repeat(64)}\ninvalid`,
+    blockedAuthors: "A".repeat(64),
   });
   assert.deepEqual(normalized.relays, ["wss://relay.example"]);
   assert.deepEqual(normalized.mutedWords, ["Spoiler", "spoiler"]);
   assert.deepEqual(normalized.blockedAuthors, ["a".repeat(64)]);
+  assert.throws(() => normalizeSettings({
+    relays: ["wss://relay.example"],
+    blockedAuthors: "invalid",
+  }), /64-character hexadecimal/);
 });
 
 test("rejects empty or excessive relay configurations", () => {
